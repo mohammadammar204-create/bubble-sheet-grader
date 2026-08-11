@@ -49,7 +49,6 @@ FONT_NAME = load_arabic_font()
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Grading System", page_icon="⚡", layout="wide")
 
-# Background fallback image
 bg_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
 
 # --- AESTHETIC STYLING ---
@@ -64,7 +63,6 @@ st.markdown(
         color: #F5F5F7 !important;
     }}
 
-    /* 1. Blurred Background */
     .stApp {{
         background: 
             linear-gradient(rgba(12, 14, 22, 0.70), rgba(12, 14, 22, 0.70)),
@@ -72,7 +70,6 @@ st.markdown(
         background-size: cover !important;
     }}
 
-    /* 2. Header Card */
     .header-card {{
         background: rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(25px);
@@ -95,7 +92,6 @@ st.markdown(
         line-height: 1.1;
     }}
 
-    /* 3. Section Cards */
     .glass-card {{
         background: rgba(22, 24, 30, 0.55);
         backdrop-filter: blur(20px);
@@ -107,7 +103,6 @@ st.markdown(
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }}
 
-    /* 4. Translucent Glass Tabs */
     .stTabs [data-baseweb="tab-list"] {{
         gap: 8px;
         background-color: rgba(255, 255, 255, 0.05) !important;
@@ -148,7 +143,6 @@ st.markdown(
         display: none !important;
     }}
 
-    /* Input Controls */
     div[data-baseweb="input"] input {{
         background-color: rgba(28, 28, 30, 0.8) !important;
         color: #FFFFFF !important;
@@ -156,7 +150,6 @@ st.markdown(
         border: 1px solid rgba(255, 255, 255, 0.15) !important;
     }}
 
-    /* Buttons */
     div.stButton > button {{
         background: linear-gradient(180deg, #0A84FF 0%, #0071E3 100%) !important;
         color: #FFFFFF !important;
@@ -198,11 +191,6 @@ st.markdown(
         padding: 12px !important;
     }}
 
-    section[data-testid="stFileUploader"]:hover {{
-        border-color: #0A84FF !important;
-        background: rgba(10, 132, 255, 0.04) !important;
-    }}
-
     h1, h2, h3, h4, label {{
         color: #F5F5F7 !important;
     }}
@@ -219,7 +207,6 @@ st.markdown(
 )
 
 
-# --- ARABIC TEXT HELPER ---
 def format_arabic(text):
     if not isinstance(text, str):
         text = str(text)
@@ -227,7 +214,6 @@ def format_arabic(text):
     return get_display(reshaped_text)
 
 
-# --- EXCEL PARSER FOR COLLEGE LAB GROUPS ---
 def parse_college_excel(file_bytes):
     df_raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
     students = []
@@ -269,7 +255,6 @@ def parse_college_excel(file_bytes):
     return pd.DataFrame(students)
 
 
-# --- BUBBLE SHEET PDF GENERATOR ---
 def draw_single_sheet(
     student_id,
     student_name,
@@ -277,7 +262,9 @@ def draw_single_sheet(
     exam_id,
     form_type="A",
     num_questions=10,
+    is_reference=False,
 ):
+    """Generates PDF bubble sheet with QR code for student or reference answer key."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     page_width, page_height = letter
@@ -307,22 +294,34 @@ def draw_single_sheet(
     c.setFont("Helvetica-Bold", 14)
     c.drawString(70, page_height - 45, f"Exam Code: {exam_id}")
     c.drawString(70, page_height - 65, f"Group: {group_name}")
-    c.drawString(
-        70,
-        page_height - 85,
-        f"Form: {form_type} (10 Questions / Max Grade: 10)",
-    )
+    
+    if is_reference:
+        c.setFillColorRGB(0.8, 0.1, 0.1)
+        c.drawString(
+            70,
+            page_height - 85,
+            f"OFFICIAL ANSWER KEY - FORM {form_type}",
+        )
+        c.setFillColorRGB(0, 0, 0)
+    else:
+        c.drawString(
+            70,
+            page_height - 85,
+            f"Form: {form_type} (10 Questions / Max Grade: 10)",
+        )
+        
     c.setFont("Helvetica", 11)
-    c.drawString(70, page_height - 105, f"Student ID: {student_id}")
+    c.drawString(70, page_height - 105, f"ID / Code: {student_id}")
 
     # Right-aligned Arabic Name
     formatted_name = format_arabic(student_name)
     c.setFont(FONT_NAME, 14)
     c.drawRightString(page_width - 160, page_height - 45, formatted_name)
 
-    # QR Code
+    # QR Code payload distinguishing student sheet vs reference answer key
     qr_payload = json.dumps(
         {
+            "is_reference": is_reference,
             "group": str(group_name),
             "student_id": str(student_id),
             "student_name": str(student_name),
@@ -360,7 +359,6 @@ def draw_single_sheet(
     return buffer.getvalue()
 
 
-# --- QR CODE DECODER ---
 def decode_sheet_qr(image_np):
     qr_detector = cv2.QRCodeDetector()
     data, _, _ = qr_detector.detectAndDecode(image_np)
@@ -372,7 +370,6 @@ def decode_sheet_qr(image_np):
     return None
 
 
-# --- IMPROVED OMR SCANNER HELPER (WITH ROW GROUPING) ---
 def scan_bubbles_from_image(image_bytes, num_questions=10):
     np_img = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
@@ -400,18 +397,18 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
             bubble_contours.append(c)
 
     if not bubble_contours:
-        return None, qr_meta, "No bubbles detected. Please ensure clear lighting."
+        return None, qr_meta, "No bubbles detected."
 
     # Sort contours top-to-bottom
     bubble_contours = sorted(
         bubble_contours, key=lambda c: cv2.boundingRect(c)[1]
     )
 
-    # Group contours into horizontal rows by Y coordinate threshold
+    # Group into rows by Y-coordinate
     rows = []
     current_row = []
     prev_y = None
-    y_threshold = 15  # pixels tolerance for same line
+    y_threshold = 15
 
     for cnt in bubble_contours:
         _, y, _, _ = cv2.boundingRect(cnt)
@@ -432,12 +429,12 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
         if q_idx - 1 >= len(rows):
             break
 
-        # Sort current row contours left-to-right by X coordinate
+        # Sort contours in row left-to-right by X-coordinate
         row_contours = sorted(rows[q_idx - 1], key=lambda c: cv2.boundingRect(c)[0])
         marked_idx = None
         max_pixels = 0
 
-        for opt_idx, cnt in enumerate(row_contours[:4]):  # Max 4 options per row
+        for opt_idx, cnt in enumerate(row_contours[:4]):
             mask = np.zeros(thresh.shape, dtype="uint8")
             cv2.drawContours(mask, [cnt], -1, 255, -1)
             mask = cv2.bitwise_and(thresh, thresh, mask=mask)
@@ -454,7 +451,6 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     return answers, qr_meta, None
 
 
-# --- AI FUZZY NAME MATCHING HELPER ---
 def find_best_name_match(query_name, candidate_names, cutoff=0.55):
     if not query_name or pd.isna(query_name):
         return None
@@ -464,61 +460,62 @@ def find_best_name_match(query_name, candidate_names, cutoff=0.55):
     return matches[0] if matches else None
 
 
-# --- HANDWRITTEN CHECKMARK ATTENDANCE COUNTER ---
-def process_attendance_image(image_np, max_marks_target):
-    gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV,
-        11,
-        2,
-    )
-
-    contours, _ = cv2.findContours(
-        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    mark_boxes = []
-
-    for c in contours:
-        x, y, w, h = cv2.boundingRect(c)
-        area = cv2.contourArea(c)
-        if 8 <= w <= 45 and 8 <= h <= 45 and 30 <= area <= 1200:
-            mark_boxes.append((x, y, w, h))
-
-    total_marks_found = len(mark_boxes)
-    calculated_attendance = min(total_marks_found, max_marks_target)
-
-    if max_marks_target > 0:
-        score_out_of_2 = round(
-            (calculated_attendance / max_marks_target) * 2.0, 2
-        )
-    else:
-        score_out_of_2 = 0.0
-
-    return total_marks_found, score_out_of_2
-
-
 # --- STREAMLIT UI TABS ---
-tab1, tab2, tab3, tab4 = st.tabs(
+tab1, tab2, tab3 = st.tabs(
     [
         "Sheet Generator",
         "Auto Grader",
         "Master Consolidator",
-        "الحضور (Attendance)",
     ]
 )
 
 with tab1:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("Generate 10-MCQ Form A & Form B Bubble Sheets")
+    st.subheader("1. Download Blank Reference Answer Keys (Form A & B)")
+    st.write("Print these templates, shade in the correct answers, and upload them in the **Auto Grader** tab as reference keys.")
+    
+    col_ref_a, col_ref_b = st.columns(2)
+    
+    with col_ref_a:
+        pdf_ref_a = draw_single_sheet(
+            student_id="REF_KEY_FORM_A",
+            student_name="مفتاح الإجابة النموذجية",
+            group_name="ANSWER KEY",
+            exam_id="DENT2025",
+            form_type="A",
+            num_questions=10,
+            is_reference=True
+        )
+        st.download_button(
+            label="📄 Download Blank Reference Sheet (Form A)",
+            data=pdf_ref_a,
+            file_name="Reference_Key_Form_A.pdf",
+            mime="application/pdf"
+        )
+
+    with col_ref_b:
+        pdf_ref_b = draw_single_sheet(
+            student_id="REF_KEY_FORM_B",
+            student_name="مفتاح الإجابة النموذجية",
+            group_name="ANSWER KEY",
+            exam_id="DENT2025",
+            form_type="B",
+            num_questions=10,
+            is_reference=True
+        )
+        st.download_button(
+            label="📄 Download Blank Reference Sheet (Form B)",
+            data=pdf_ref_b,
+            file_name="Reference_Key_Form_B.pdf",
+            mime="application/pdf"
+        )
+
+    st.markdown("---")
+    st.subheader("2. Generate Student Form A & Form B Bubble Sheets")
     col1, col2 = st.columns(2)
 
     with col1:
         exam_id = st.text_input("Exam Code or Title", "DENT2025")
-        st.info("📌 Sheet configuration: Fixed to 10 Questions (Grade out of 10).")
         form_mode = st.radio(
             "Form Distribution Strategy",
             [
@@ -545,7 +542,7 @@ with tab1:
                     f"Parsed {len(df)} total students across {len(df['group'].unique())} groups!"
                 )
 
-                if st.button("🚀 Generate 10-MCQ Sheets (Group Folders)"):
+                if st.button("🚀 Generate 10-MCQ Student Sheets"):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(
                         zip_buffer, "w", zipfile.ZIP_DEFLATED
@@ -555,10 +552,7 @@ with tab1:
                             s_id = str(row["student_id"])
                             s_name = str(row["student_name"])
 
-                            if (
-                                form_mode
-                                == "Alternate Form A and Form B per student"
-                            ):
+                            if form_mode == "Alternate Form A and Form B per student":
                                 current_form = "A" if idx % 2 == 0 else "B"
                             elif form_mode == "All Form A":
                                 current_form = "A"
@@ -572,6 +566,7 @@ with tab1:
                                 exam_id=exam_id,
                                 form_type=current_form,
                                 num_questions=10,
+                                is_reference=False
                             )
 
                             clean_name = s_name.replace(" ", "_")
@@ -580,9 +575,9 @@ with tab1:
 
                     zip_buffer.seek(0)
                     st.download_button(
-                        label="📥 Download Grouped 10-MCQ Form A/B Sheets (ZIP)",
+                        label="📥 Download Grouped Student Sheets (ZIP)",
                         data=zip_buffer,
-                        file_name=f"{exam_id}_10MCQ_FormA_FormB_sheets.zip",
+                        file_name=f"{exam_id}_Student_Sheets.zip",
                         mime="application/zip",
                     )
         except Exception as e:
@@ -591,18 +586,18 @@ with tab1:
 
 with tab2:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("Upload Answer Keys & Batch Grade Mixed Papers")
+    st.subheader("Upload Reference Answer Keys & Batch Grade Papers")
 
     col_a, col_b = st.columns(2)
     with col_a:
         key_img_a = st.file_uploader(
-            "Upload Reference Answer Sheet Photo for Form A (10 MCQ)",
+            "Upload Filled Reference Photo for Form A",
             type=["jpg", "png", "jpeg"],
             key="key_a",
         )
     with col_b:
         key_img_b = st.file_uploader(
-            "Upload Reference Answer Sheet Photo for Form B (10 MCQ)",
+            "Upload Filled Reference Photo for Form B",
             type=["jpg", "png", "jpeg"],
             key="key_b",
         )
@@ -612,26 +607,22 @@ with tab2:
 
     if key_img_a:
         key_a_bytes = key_img_a.read()
-        answer_key_a, _, err_a = scan_bubbles_from_image(
-            key_a_bytes, num_questions=10
-        )
+        answer_key_a, qr_meta_a, err_a = scan_bubbles_from_image(key_a_bytes, num_questions=10)
         if err_a:
             st.error(f"Form A Reference Key Error: {err_a}")
         else:
-            st.success("Form A Reference Answer Key loaded!")
+            st.success("Form A Reference Key loaded successfully!")
 
     if key_img_b:
         key_b_bytes = key_img_b.read()
-        answer_key_b, _, err_b = scan_bubbles_from_image(
-            key_b_bytes, num_questions=10
-        )
+        answer_key_b, qr_meta_b, err_b = scan_bubbles_from_image(key_b_bytes, num_questions=10)
         if err_b:
             st.error(f"Form B Reference Key Error: {err_b}")
         else:
-            st.success("Form B Reference Answer Key loaded!")
+            st.success("Form B Reference Key loaded successfully!")
 
     st.markdown("---")
-    st.subheader("📁 Batch Upload Student Exam Photos & Grade Out of 10")
+    st.subheader("📁 Batch Upload Student Exam Photos")
 
     roster_file_grade = st.file_uploader(
         "Upload Roster Excel File to sync results into",
@@ -648,9 +639,7 @@ with tab2:
         if not roster_file_grade:
             st.error("Please upload the Roster Excel file.")
         elif not answer_key_a and not answer_key_b:
-            st.error(
-                "Please upload at least one Answer Key Reference Photo (Form A or Form B)."
-            )
+            st.error("Please upload at least one Reference Key Photo (Form A or Form B).")
         elif not mixed_student_imgs:
             st.error("Please upload student photos.")
         else:
@@ -665,63 +654,41 @@ with tab2:
 
             for idx, student_file in enumerate(mixed_student_imgs):
                 s_bytes = student_file.read()
-                s_answers, qr_meta, err = scan_bubbles_from_image(
-                    s_bytes, num_questions=10
-                )
+                s_answers, qr_meta, err = scan_bubbles_from_image(s_bytes, num_questions=10)
 
                 if err or not s_answers:
-                    st.warning(
-                        f"Could not read bubbles for {student_file.name}: {err}"
-                    )
+                    st.warning(f"Could not read bubbles for {student_file.name}: {err}")
                     continue
 
                 student_id = qr_meta.get("student_id") if qr_meta else None
                 form_detected = qr_meta.get("form", "A") if qr_meta else "A"
 
-                target_key = (
-                    answer_key_a if form_detected == "A" else answer_key_b
-                )
+                target_key = answer_key_a if form_detected == "A" else answer_key_b
                 if not target_key:
-                    st.warning(
-                        f"Skipped {student_file.name}: No answer key uploaded for Form {form_detected}."
-                    )
+                    st.warning(f"Skipped {student_file.name}: No reference key loaded for Form {form_detected}.")
                     continue
 
                 correct_count = 0
                 for q_idx in range(1, 11):
                     q_str = str(q_idx)
-                    if (
-                        s_answers.get(q_str) == target_key.get(q_str)
-                        and s_answers.get(q_str) != "None"
-                    ):
+                    if s_answers.get(q_str) == target_key.get(q_str) and s_answers.get(q_str) != "None":
                         correct_count += 1
 
                 score_out_of_10 = float(correct_count)
 
-                if (
-                    student_id
-                    and student_id in df_students["student_id"].values
-                ):
-                    df_students.loc[
-                        df_students["student_id"] == student_id, "Form"
-                    ] = form_detected
-                    df_students.loc[
-                        df_students["student_id"] == student_id, "Grade (/10)"
-                    ] = score_out_of_10
+                if student_id and student_id in df_students["student_id"].values:
+                    df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
+                    df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
                     graded_count += 1
 
                 progress_bar.progress((idx + 1) / len(mixed_student_imgs))
 
-            st.success(
-                f"Grading Complete! Graded {graded_count} student papers out of 10."
-            )
+            st.success(f"Grading Complete! Graded {graded_count} student papers out of 10.")
             st.dataframe(df_students)
 
             output_excel = io.BytesIO()
             with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
-                df_students.to_excel(
-                    writer, index=False, sheet_name="Exam Results Out of 10"
-                )
+                df_students.to_excel(writer, index=False, sheet_name="Exam Results Out of 10")
             output_excel.seek(0)
 
             st.download_button(
@@ -735,9 +702,6 @@ with tab2:
 with tab3:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("AI Master Excel Consolidator")
-    st.write(
-        "Upload a **Master Reference Excel File** along with multiple **Group Excel files**. The AI aligns names and merges grades automatically."
-    )
 
     master_excel_file = st.file_uploader(
         "Upload Master Reference Excel Sheet",
@@ -823,131 +787,4 @@ with tab3:
                 )
             except Exception as e:
                 st.error(f"Error consolidating files: {e}")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with tab4:
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.subheader("قسم الحضور (Attendance Calculation & AI Excel Sync)")
-    st.write(
-        "Upload printed attendance sheets containing handwritten check marks (✓ / X). Select total check marks target to compute scores **out of 2 points**."
-    )
-
-    col_att1, col_att2 = st.columns(2)
-
-    with col_att1:
-        attendance_target = st.number_input(
-            "Select total check marks for full attendance (100%):",
-            min_value=1,
-            max_value=30,
-            value=7,
-            help="For example: 7 check marks = 2/2 points.",
-        )
-
-    with col_att2:
-        attendance_pdf = st.file_uploader(
-            "Upload Attendance PDF or Sheet Images",
-            type=["pdf", "png", "jpg", "jpeg"],
-            accept_multiple_files=True,
-            key="att_files",
-        )
-
-    st.markdown("---")
-    st.subheader("📊 Target Excel File")
-    target_excel_attendance = st.file_uploader(
-        "Upload Reference Excel Sheet to insert Attendance Grades into",
-        type=["xlsx", "xls"],
-        key="att_excel_target",
-    )
-
-    if st.button("✨ Process Attendance & Sync to Excel"):
-        if not attendance_pdf:
-            st.error("Please upload attendance PDF/Image files.")
-        elif not target_excel_attendance:
-            st.error("Please upload the target reference Excel file.")
-        else:
-            try:
-                ref_df = pd.read_excel(target_excel_attendance)
-                name_col = None
-                for col in ref_df.columns:
-                    if "اسم" in str(col) or "Name" in str(col).capitalize():
-                        name_col = col
-                        break
-                if not name_col:
-                    name_col = (
-                        ref_df.columns[1]
-                        if len(ref_df.columns) > 1
-                        else ref_df.columns[0]
-                    )
-
-                ref_df["Detected_Checkmarks"] = 0
-                ref_df["Attendance_Grade (/2)"] = 0.0
-
-                total_scanned = 0
-
-                for uploaded_file in attendance_pdf:
-                    if uploaded_file.name.endswith(".pdf"):
-                        if PYPDF_AVAILABLE:
-                            reader = pypdf.PdfReader(uploaded_file)
-                            for page in reader.pages:
-                                for img_obj in page.images:
-                                    img_bytes = img_obj.data
-                                    np_img = np.frombuffer(
-                                        img_bytes, np.uint8
-                                    )
-                                    img_cv = cv2.imdecode(
-                                        np_img, cv2.IMREAD_COLOR
-                                    )
-
-                                    if img_cv is not None:
-                                        marks, score = process_attendance_image(
-                                            img_cv, attendance_target
-                                        )
-                                        total_scanned += 1
-                        else:
-                            st.error(
-                                "PDF processing requires `pypdf`. Add `pypdf` to `requirements.txt` or upload PNG/JPG images instead."
-                            )
-                    else:
-                        file_bytes = uploaded_file.read()
-                        np_img = np.frombuffer(file_bytes, np.uint8)
-                        img_cv = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
-
-                        if img_cv is not None:
-                            marks, score = process_attendance_image(
-                                img_cv, attendance_target
-                            )
-                            total_scanned += 1
-
-                for idx_row in range(len(ref_df)):
-                    cnt = ref_df.at[idx_row, "Detected_Checkmarks"]
-                    if cnt == 0:
-                        ref_df.at[idx_row, "Attendance_Grade (/2)"] = 0.0
-                    else:
-                        calc_score = round(
-                            min(2.0, (cnt / attendance_target) * 2.0), 2
-                        )
-                        ref_df.at[idx_row, "Attendance_Grade (/2)"] = (
-                            calc_score
-                        )
-
-                st.success(
-                    "Successfully processed attendance sheets and calculated scores out of 2!"
-                )
-                st.dataframe(ref_df)
-
-                att_output = io.BytesIO()
-                with pd.ExcelWriter(att_output, engine="openpyxl") as writer:
-                    ref_df.to_excel(
-                        writer, index=False, sheet_name="Attendance Grades"
-                    )
-                att_output.seek(0)
-
-                st.download_button(
-                    label="📥 Download Excel File with Attendance Grades (/2)",
-                    data=att_output,
-                    file_name="Final_Attendance_Grades_Out_Of_2.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
-            except Exception as e:
-                st.error(f"Error processing attendance: {e}")
     st.markdown("</div>", unsafe_allow_html=True)
