@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import urllib.request
 import zipfile
 import arabic_reshaper
 import cv2
@@ -10,6 +12,30 @@ import streamlit as st
 from bidi.algorithm import get_display
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+# --- SETUP ARABIC FONT ---
+ARABIC_FONT_PATH = "Amiri-Regular.ttf"
+
+@st.cache_resource
+def load_arabic_font():
+    """Downloads and registers the Amiri Arabic TTF font for ReportLab."""
+    if not os.path.exists(ARABIC_FONT_PATH):
+        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf"
+        try:
+            urllib.request.urlretrieve(font_url, ARABIC_FONT_PATH)
+        except Exception:
+            # Backup font URL
+            font_url_backup = "https://github.com/aliftype/amiri/releases/download/1.000/Amiri-1.000.zip"
+            st.error("Failed to download font. Please verify internet access on Streamlit Cloud.")
+
+    if os.path.exists(ARABIC_FONT_PATH):
+        pdfmetrics.registerFont(TTFont("Amiri", ARABIC_FONT_PATH))
+        return "Amiri"
+    return "Helvetica"
+
+FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
@@ -82,7 +108,7 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, num_questio
     c.rect(margin, page_height - margin - marker_size, marker_size, marker_size, fill=1)
     c.rect(page_width - margin - marker_size, page_height - margin - marker_size, marker_size, marker_size, fill=1)
     c.rect(margin, margin, marker_size, marker_size, fill=1)
-    c.rect(page_width - margin - marker_size, margin, marker_size, margin, fill=1)
+    c.rect(page_width - margin - marker_size, margin, marker_size, marker_size, fill=1)
 
     # Header - Exam & Group Info
     c.setFont("Helvetica-Bold", 14)
@@ -91,9 +117,9 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, num_questio
     c.setFont("Helvetica", 11)
     c.drawString(70, page_height - 88, f"Student ID: {student_id}")
 
-    # Draw Arabic Student Name (Formatted)
+    # Draw Arabic Student Name using registered Arabic Font
     formatted_name = format_arabic(student_name)
-    c.setFont("Helvetica-Bold", 14)
+    c.setFont(FONT_NAME, 14)
     c.drawRightString(page_width - 150, page_height - 50, formatted_name)
 
     # QR Code (Encodes Group, Student ID, and Exam ID)
