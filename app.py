@@ -45,162 +45,165 @@ FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="OMR & Attendance Studio", page_icon="🍎", layout="wide"
+    page_title="OMR & Attendance Studio", page_icon="⚡", layout="wide"
 )
 
-# --- APPLE-INSPIRED CSS DESIGN SYSTEM ---
+# --- POLISHED DARK APPLE DESIGN SYSTEM ---
 st.markdown("""
 <style>
-    /* Global Typography & Background */
-    @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700&display=swap');
+    /* Google Fonts Import for Inter / SF Style */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     
     html, body, [class*="css"] {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
         -webkit-font-smoothing: antialiased;
+        color: #F5F5F7 !important;
     }
     
-    .main {
-        background: linear-gradient(180deg, #F5F5F7 0%, #FFFFFF 100%);
+    /* Background Override */
+    .stApp {
+        background: #0D0E12 !important;
     }
 
-    /* Apple-style Hero Header */
+    /* Apple Dark Hero Header */
     .apple-hero {
-        background: rgba(255, 255, 255, 0.65);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
-        border-radius: 24px;
-        padding: 32px 40px;
-        margin-bottom: 28px;
-        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        background: linear-gradient(135deg, rgba(30, 32, 40, 0.8) 0%, rgba(20, 22, 28, 0.9) 100%);
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        padding: 28px 36px;
+        margin-bottom: 24px;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     
     .apple-hero:hover {
-        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.07);
-        transform: translateY(-2px);
+        border-color: rgba(10, 132, 255, 0.3);
+        box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5), 0 0 20px rgba(10, 132, 255, 0.15);
     }
 
     .apple-title {
-        font-size: 32px !important;
+        font-size: 30px !important;
         font-weight: 700 !important;
-        background: linear-gradient(135deg, #1D1D1F 0%, #434344 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #FFFFFF !important;
         letter-spacing: -0.02em;
         margin: 0;
+        background: linear-gradient(180deg, #FFFFFF 0%, #D1D1D6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
     }
 
     .apple-subtitle {
-        font-size: 15px !important;
-        color: #86868B;
+        font-size: 14px !important;
+        color: #98989D !important;
         margin-top: 6px;
         font-weight: 400;
+        letter-spacing: -0.01em;
     }
 
-    /* Glass Cards */
+    /* Section Cards */
     .glass-card {
-        background: rgba(255, 255, 255, 0.75);
+        background: rgba(22, 24, 30, 0.7);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(0, 0, 0, 0.06);
-        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
         padding: 24px;
         margin-bottom: 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
-        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
     }
 
-    .glass-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
-    }
-
-    /* Custom Streamlit Tabs - Pill Style */
+    /* Streamlit Tabs Customization */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: rgba(238, 238, 242, 0.7);
+        gap: 6px;
+        background-color: rgba(255, 255, 255, 0.05);
         padding: 6px;
-        border-radius: 16px;
-        backdrop-filter: blur(12px);
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .stTabs [data-baseweb="tab"] {
-        height: 40px;
-        border-radius: 12px;
+        height: 38px;
+        border-radius: 10px;
         font-weight: 500;
-        font-size: 14px;
-        color: #6E6E73;
+        font-size: 13.5px;
+        color: #8E8E93 !important;
         border: none !important;
-        padding: 0 18px;
-        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        padding: 0 16px;
+        transition: all 0.2s ease;
     }
 
     .stTabs [aria-selected="true"] {
-        background-color: #FFFFFF !important;
-        color: #0071E3 !important;
-        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08) !important;
+        background-color: #0A84FF !important;
+        color: #FFFFFF !important;
         font-weight: 600;
+        box-shadow: 0 4px 12px rgba(10, 132, 255, 0.35) !important;
     }
 
-    /* Custom Buttons - Apple Blue */
+    /* Input Controls */
+    div[data-baseweb="input"] input {
+        background-color: #1C1C1E !important;
+        color: #FFFFFF !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    }
+
+    /* Buttons Style */
     div.stButton > button {
-        background: linear-gradient(180deg, #0077ED 0%, #0071E3 100%) !important;
-        color: white !important;
-        border-radius: 14px !important;
+        background: linear-gradient(180deg, #0A84FF 0%, #0071E3 100%) !important;
+        color: #FFFFFF !important;
+        border-radius: 12px !important;
         border: none !important;
-        padding: 10px 24px !important;
+        padding: 10px 22px !important;
         font-weight: 600 !important;
         font-size: 14px !important;
-        letter-spacing: -0.01em !important;
-        box-shadow: 0 4px 14px rgba(0, 113, 227, 0.25) !important;
-        transition: all 0.25s ease !important;
+        box-shadow: 0 4px 16px rgba(10, 132, 255, 0.3) !important;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
     }
 
     div.stButton > button:hover {
-        transform: scale(1.02) translateY(-1px) !important;
-        box-shadow: 0 6px 20px rgba(0, 113, 227, 0.35) !important;
-        background: linear-gradient(180deg, #0071E3 0%, #0062C4 100%) !important;
+        transform: translateY(-1px) scale(1.01) !important;
+        box-shadow: 0 6px 22px rgba(10, 132, 255, 0.45) !important;
     }
 
     /* Download Buttons */
     div.stDownloadButton > button {
-        background: #34C759 !important;
-        color: white !important;
-        border-radius: 14px !important;
+        background: linear-gradient(180deg, #30D158 0%, #28CD41 100%) !important;
+        color: #FFFFFF !important;
+        border-radius: 12px !important;
         border: none !important;
-        padding: 10px 24px !important;
+        padding: 10px 22px !important;
         font-weight: 600 !important;
-        box-shadow: 0 4px 14px rgba(52, 199, 89, 0.25) !important;
+        font-size: 14px !important;
+        box-shadow: 0 4px 16px rgba(48, 209, 88, 0.3) !important;
         transition: all 0.25s ease !important;
     }
 
     div.stDownloadButton > button:hover {
-        transform: scale(1.02) translateY(-1px) !important;
-        box-shadow: 0 6px 20px rgba(52, 199, 89, 0.35) !important;
+        transform: translateY(-1px) scale(1.01) !important;
+        box-shadow: 0 6px 22px rgba(48, 209, 88, 0.45) !important;
     }
 
-    /* Inputs & File Uploaders */
-    div[data-baseweb="input"] {
-        border-radius: 12px !important;
-        border: 1px solid #E5E5EA !important;
-        background: #FFFFFF !important;
-    }
-
+    /* File Uploader */
     section[data-testid="stFileUploader"] {
-        border: 2px dashed #D1D1D6 !important;
-        border-radius: 18px !important;
-        background: rgba(255, 255, 255, 0.5) !important;
-        padding: 16px !important;
-        transition: all 0.3s ease !important;
+        border: 1.5px dashed rgba(255, 255, 255, 0.2) !important;
+        border-radius: 14px !important;
+        background: rgba(255, 255, 255, 0.02) !important;
+        padding: 12px !important;
     }
 
     section[data-testid="stFileUploader"]:hover {
-        border-color: #0071E3 !important;
-        background: rgba(0, 113, 227, 0.02) !important;
+        border-color: #0A84FF !important;
+        background: rgba(10, 132, 255, 0.04) !important;
     }
 
-    /* Hide Streamlit default branding */
+    /* Streamlit Headers & Labels */
+    h1, h2, h3, h4, label {
+        color: #F5F5F7 !important;
+    }
+
+    /* Hide footer & main menu */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
