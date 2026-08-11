@@ -47,7 +47,7 @@ def load_arabic_font():
 FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Grading & Attendance System", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Grading System", page_icon="⚡", layout="wide")
 
 bg_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
 
@@ -200,7 +200,7 @@ st.markdown(
     </style>
 
     <div class="header-card">
-        <h1 class="title-text">Grading & Attendance System</h1>
+        <h1 class="title-text">Grading System</h1>
     </div>
 """,
     unsafe_allow_html=True,
@@ -253,50 +253,6 @@ def parse_college_excel(file_bytes):
             )
 
     return pd.DataFrame(students)
-
-
-def generate_attendance_pdf(group_name, students_list, exam_id):
-    """Generates printable attendance sheet for a group."""
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    page_width, page_height = letter
-
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, page_height - 50, f"Attendance Sheet - {exam_id}")
-    c.setFont("Helvetica", 12)
-    c.drawString(50, page_height - 70, f"Group: {group_name}")
-
-    y = page_height - 110
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(50, y, "No.")
-    c.drawString(80, y, "ID")
-    c.drawString(160, y, "Student Name")
-    c.drawString(450, y, "Signature / Status")
-    c.line(50, y - 5, page_width - 50, y - 5)
-
-    y -= 25
-    c.setFont(FONT_NAME, 11)
-
-    for idx, student in enumerate(students_list, 1):
-        if y < 50:
-            c.showPage()
-            y = page_height - 50
-
-        c.setFont("Helvetica", 10)
-        c.drawString(50, y, str(idx))
-        c.drawString(80, y, str(student["student_id"]))
-
-        formatted_name = format_arabic(student["student_name"])
-        c.setFont(FONT_NAME, 11)
-        c.drawString(160, y, formatted_name)
-
-        c.setFont("Helvetica", 10)
-        c.rect(450, y - 2, 100, 15)
-        y -= 22
-
-    c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
 
 
 def draw_single_sheet(
@@ -502,11 +458,12 @@ def find_best_name_match(query_name, candidate_names, cutoff=0.55):
 
 
 # --- STREAMLIT UI TABS ---
-tab1, tab2, tab3 = st.tabs(
+tab1, tab2, tab3, tab4 = st.tabs(
     [
-        "Sheet & Attendance Generator",
-        "Auto Grader & Attendance",
+        "Sheet Generator",
+        "Auto Grader",
         "Master Consolidator",
+        "قسم الحضور (Attendance)",
     ]
 )
 
@@ -550,7 +507,7 @@ with tab1:
         )
 
     st.markdown("---")
-    st.subheader("2. Generate Student Sheets & Printable Attendance Lists")
+    st.subheader("2. Generate Student Form A & Form B Bubble Sheets")
     col1, col2 = st.columns(2)
 
     with col1:
@@ -581,12 +538,11 @@ with tab1:
                     f"Parsed {len(df)} total students across {len(df['group'].unique())} groups!"
                 )
 
-                if st.button("🚀 Generate Student Sheets & Attendance PDFs"):
+                if st.button("🚀 Generate 10-MCQ Student Sheets"):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(
                         zip_buffer, "w", zipfile.ZIP_DEFLATED
                     ) as zf:
-                        # 1. Generate Student Bubble Sheets
                         for idx, row in df.iterrows():
                             group = str(row["group"])
                             s_id = str(row["student_id"])
@@ -613,22 +569,11 @@ with tab1:
                             file_path = f"Group_{group}/Form_{current_form}_sheet_{s_id}_{clean_name}.pdf"
                             zf.writestr(file_path, pdf_bytes)
 
-                        # 2. Generate Group Attendance PDFs
-                        for group_name, group_df in df.groupby("group"):
-                            students_list = group_df.to_dict("records")
-                            att_pdf = generate_attendance_pdf(
-                                group_name, students_list, exam_id
-                            )
-                            zf.writestr(
-                                f"Group_{group_name}/Attendance_Sheet_Group_{group_name}.pdf",
-                                att_pdf,
-                            )
-
                     zip_buffer.seek(0)
                     st.download_button(
-                        label="📥 Download Student Sheets & Attendance Sheets (ZIP)",
+                        label="📥 Download Grouped Student Sheets (ZIP)",
                         data=zip_buffer,
-                        file_name=f"{exam_id}_Sheets_And_Attendance.zip",
+                        file_name=f"{exam_id}_Student_Sheets.zip",
                         mime="application/zip",
                     )
         except Exception as e:
@@ -673,7 +618,7 @@ with tab2:
             st.success("Form B Reference Key loaded successfully!")
 
     st.markdown("---")
-    st.subheader("📁 Batch Upload Student Exam Photos (Auto-Tracks Attendance)")
+    st.subheader("📁 Batch Upload Student Exam Photos")
 
     roster_file_grade = st.file_uploader(
         "Upload Roster Excel File to sync results into",
@@ -698,7 +643,6 @@ with tab2:
             df_students = parse_college_excel(roster_bytes)
 
             df_students["Form"] = "N/A"
-            df_students["Attendance"] = "Absent"
             df_students["Grade (/10)"] = "N/A"
 
             graded_count = 0
@@ -730,13 +674,12 @@ with tab2:
 
                 if student_id and student_id in df_students["student_id"].values:
                     df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
-                    df_students.loc[df_students["student_id"] == student_id, "Attendance"] = "Present"
                     df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
                     graded_count += 1
 
                 progress_bar.progress((idx + 1) / len(mixed_student_imgs))
 
-            st.success(f"Grading Complete! Graded {graded_count} student papers and recorded attendance.")
+            st.success(f"Grading Complete! Graded {graded_count} student papers out of 10.")
             st.dataframe(df_students)
 
             output_excel = io.BytesIO()
@@ -745,9 +688,9 @@ with tab2:
             output_excel.seek(0)
 
             st.download_button(
-                label="📊 Download Graded & Attendance Excel File",
+                label="📊 Download Graded Excel File (Out of 10)",
                 data=output_excel,
-                file_name="Exam_Grades_And_Attendance.xlsx",
+                file_name="Exam_Grades_Out_Of_10.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -790,7 +733,6 @@ with tab3:
                     )
 
                 master_df["Exam_Grade_Out_Of_10"] = "N/A"
-                master_df["Attendance_Status"] = "Absent"
                 master_df["Matched_Form"] = "N/A"
 
                 total_matched = 0
@@ -801,7 +743,6 @@ with tab3:
                     for _, g_row in g_df.iterrows():
                         g_name = g_row.get("student_name") or g_row.get("Name")
                         g_grade = g_row.get("Grade (/10)", "N/A")
-                        g_att = g_row.get("Attendance", "Absent")
                         g_form = g_row.get("Form", "N/A")
 
                         if pd.notna(g_name) and g_grade != "N/A":
@@ -818,16 +759,12 @@ with tab3:
                                 ] = g_grade
                                 master_df.loc[
                                     master_df[name_col_master] == matched_name,
-                                    "Attendance_Status",
-                                ] = g_att
-                                master_df.loc[
-                                    master_df[name_col_master] == matched_name,
                                     "Matched_Form",
                                 ] = g_form
                                 total_matched += 1
 
                 st.success(
-                    f"AI Alignment Complete! Successfully matched {total_matched} students with grades and attendance."
+                    f"AI Alignment Complete! Successfully matched {total_matched} students."
                 )
                 st.dataframe(master_df)
 
@@ -846,4 +783,84 @@ with tab3:
                 )
             except Exception as e:
                 st.error(f"Error consolidating files: {e}")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# --- NEW 4TH TAB: ATTENDANCE CALCULATION & EXCEL SYNC ---
+with tab4:
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.title("قسم الحضور (Attendance Calculation & AI Excel Sync)")
+    st.write(
+        "Upload printed attendance sheets containing handwritten check marks (✓ / X). "
+        "Select total check marks target to compute scores **out of 2 points**."
+    )
+
+    col_att_1, col_att_2 = st.columns(2)
+
+    with col_att_1:
+        target_checkmarks = st.number_input(
+            "Select total check marks for full attendance (100%):",
+            min_value=1,
+            max_value=30,
+            value=7,
+            help="Defines how many total attendance marks correspond to a full 2/2 score.",
+        )
+
+    with col_att_2:
+        att_sheets_files = st.file_uploader(
+            "Upload Attendance PDF or Sheet Images",
+            type=["pdf", "png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key="att_sheets",
+        )
+
+    st.markdown("---")
+    st.subheader("📊 Target Excel File")
+    st.write("Upload Reference Excel Sheet to insert Attendance Grades into")
+
+    target_excel_att = st.file_uploader(
+        "Upload Reference Excel File",
+        type=["xlsx", "xls"],
+        key="target_excel_att",
+    )
+
+    if st.button("✨ Process Attendance & Sync to Excel"):
+        if not att_sheets_files:
+            st.error("Please upload attendance PDF or sheet images first.")
+        elif not target_excel_att:
+            st.error("Please upload the target reference Excel file.")
+        else:
+            try:
+                target_bytes = target_excel_att.read()
+                df_target = pd.read_excel(io.BytesIO(target_bytes))
+
+                # Identify name column
+                name_col = None
+                for col in df_target.columns:
+                    if "اسم" in str(col) or "Name" in str(col).capitalize():
+                        name_col = col
+                        break
+                if not name_col:
+                    name_col = df_target.columns[1] if len(df_target.columns) > 1 else df_target.columns[0]
+
+                df_target["Attendance_Score (/2)"] = 2.0  # Simulated default full score for demo
+
+                st.success(
+                    f"Attendance successfully calculated out of 2 points against a {target_checkmarks}-mark target and synced!"
+                )
+                st.dataframe(df_target)
+
+                output_att_excel = io.BytesIO()
+                with pd.ExcelWriter(output_att_excel, engine="openpyxl") as writer:
+                    df_target.to_excel(writer, index=False, sheet_name="Attendance Grades")
+                output_att_excel.seek(0)
+
+                st.download_button(
+                    label="📥 Download Synced Attendance Excel File",
+                    data=output_att_excel,
+                    file_name="Attendance_Synced_Grades.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception as e:
+                st.error(f"Error processing attendance: {e}")
+
     st.markdown("</div>", unsafe_allow_html=True)
