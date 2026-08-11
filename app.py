@@ -2,6 +2,7 @@ import difflib
 import io
 import json
 import os
+import re
 import urllib.request
 import zipfile
 import arabic_reshaper
@@ -247,7 +248,7 @@ def parse_college_excel(file_bytes):
             students.append(
                 {
                     "group": current_group,
-                    "student_id": str(row_cells[0]).strip(),
+                    "student_id": str(int(float(row_cells[0]))).strip(),
                     "student_name": str(row_cells[1]).strip(),
                 }
             )
@@ -370,6 +371,14 @@ def decode_sheet_qr(image_np):
     return None
 
 
+def extract_id_from_filename(filename):
+    """Extracts student ID directly from file names like 'sheet_1_name.png' or '1.jpg'."""
+    numbers = re.findall(r"\d+", filename)
+    if numbers:
+        return numbers[0]
+    return None
+
+
 def scan_bubbles_from_image(image_bytes, num_questions=10):
     np_img = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
@@ -393,7 +402,7 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     for c in contours:
         (x, y, w, h) = cv2.boundingRect(c)
         ar = w / float(h)
-        if 12 <= w <= 60 and 12 <= h <= 60 and 0.75 <= ar <= 1.25:
+        if 10 <= w <= 80 and 10 <= h <= 80 and 0.65 <= ar <= 1.35:
             bubble_contours.append(c)
 
     if not bubble_contours:
@@ -406,7 +415,7 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     rows = []
     current_row = []
     prev_y = None
-    y_threshold = 15
+    y_threshold = 18
 
     for cnt in bubble_contours:
         _, y, _, _ = cv2.boundingRect(cnt)
@@ -437,7 +446,7 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
             mask = cv2.bitwise_and(thresh, thresh, mask=mask)
             total_pixels = cv2.countNonZero(mask)
 
-            if total_pixels > max_pixels and total_pixels > 120:
+            if total_pixels > max_pixels and total_pixels > 80:
                 max_pixels = total_pixels
                 marked_idx = opt_idx
 
@@ -645,56 +654,66 @@ with tab2:
             df_students["Form"] = "N/A"
             df_students["Grade (/10)"] = "N/A"
 
+            # Clean ID column in dataframe
+            df_students["student_id"] = (
+                df_students["student_id"]
+                .astype(str)
+                .str.strip()
+                .str.replace(r"\.0$", "", regex=True)
+            )
+
             graded_count = 0
             progress_bar = st.progress(0)
-
-            # Standardize student_id column to string
-            df_students["student_id"] = df_students["student_id"].astype(str).str.strip()
 
             for idx, student_file in enumerate(mixed_student_imgs):
                 s_bytes = student_file.read()
                 s_answers, qr_meta, err = scan_bubbles_from_image(s_bytes, num_questions=10)
 
-                if err or not s_answers:
-                    st.warning(f"Could not read bubbles for {student_file.name}: {err}")
-                    continue
+                student_id = None
+                student_name = None
+                form_detected = "A"
 
-                student_id = str(qr_meta.get("student_id")).strip() if qr_meta and qr_meta.get("student_id") else None
-                student_name = qr_meta.get("student_name") if qr_meta else None
-                form_detected = qr_meta.get("form", "A") if qr_meta else "A"
+                if qr_meta:
+                    student_id = str(qr_meta.get("student_id", "")).strip()
+                    student_name = qr_meta.get("student_name")
+                    form_detected = qr_meta.get("form", "A")
+                else:
+                    # Fallback to file name if QR detection fails
+                    extracted_id = extract_id_from_filename(student_file.name)
+                    if extracted_id:
+                        student_id = str(extracted_id).strip()
 
                 target_key = answer_key_a if form_detected == "A" else answer_key_b
                 if not target_key:
-                    st.warning(f"Skipped {student_file.name}: No reference key loaded for Form {form_detected}.")
-                    continue
+                    target_key = answer_key_a or answer_key_b
 
-                correct_count = 0
-                for q_idx in range(1, 11):
-                    q_str = str(q_idx)
-                    if s_answers.get(q_str) == target_key.get(q_str) and s_answers.get(q_str) != "None":
-                        correct_count += 1
+                if s_answers and target_key:
+                    correct_count = 0
+                    for q_idx in range(1, 11):
+                        q_str = str(q_idx)
+                        if s_answers.get(q_str) == target_key.get(q_str) and s_answers.get(q_str) != "None":
+                            correct_count += 1
 
-                score_out_of_10 = float(correct_count)
+                    score_out_of_10 = float(correct_count)
 
-                # Match by student_id or fallback to name matching
-                matched_row = False
-                if student_id and student_id in df_students["student_id"].values:
-                    df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
-                    df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
-                    matched_row = True
-                elif student_name:
-                    best_match = find_best_name_match(student_name, df_students["student_name"].values)
-                    if best_match:
-                        df_students.loc[df_students["student_name"] == best_match, "Form"] = form_detected
-                        df_students.loc[df_students["student_name"] == best_match, "Grade (/10)"] = score_out_of_10
+                    matched_row = False
+                    if student_id and student_id in df_students["student_id"].values:
+                        df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
+                        df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
                         matched_row = True
+                    elif student_name:
+                        best_match = find_best_name_match(student_name, df_students["student_name"].values)
+                        if best_match:
+                            df_students.loc[df_students["student_name"] == best_match, "Form"] = form_detected
+                            df_students.loc[df_students["student_name"] == best_match, "Grade (/10)"] = score_out_of_10
+                            matched_row = True
 
-                if matched_row:
-                    graded_count += 1
+                    if matched_row:
+                        graded_count += 1
 
                 progress_bar.progress((idx + 1) / len(mixed_student_imgs))
 
-            st.success(f"Grading Complete! Graded {graded_count} student papers out of 10.")
+            st.success(f"Grading Complete! Graded {graded_count} student papers out of {len(mixed_student_imgs)} uploads.")
             st.dataframe(df_students)
 
             output_excel = io.BytesIO()
