@@ -47,7 +47,7 @@ def load_arabic_font():
 FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Grading System", page_icon="⚡", layout="wide")
+st.set_page_config(page_title="Grading & Attendance System", page_icon="⚡", layout="wide")
 
 bg_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
 
@@ -200,7 +200,7 @@ st.markdown(
     </style>
 
     <div class="header-card">
-        <h1 class="title-text">Grading System</h1>
+        <h1 class="title-text">Grading & Attendance System</h1>
     </div>
 """,
     unsafe_allow_html=True,
@@ -255,6 +255,50 @@ def parse_college_excel(file_bytes):
     return pd.DataFrame(students)
 
 
+def generate_attendance_pdf(group_name, students_list, exam_id):
+    """Generates printable attendance sheet for a group."""
+    buffer = io.BytesIO()
+    c = canvas.Canvas(buffer, pagesize=letter)
+    page_width, page_height = letter
+
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(50, page_height - 50, f"Attendance Sheet - {exam_id}")
+    c.setFont("Helvetica", 12)
+    c.drawString(50, page_height - 70, f"Group: {group_name}")
+
+    y = page_height - 110
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(50, y, "No.")
+    c.drawString(80, y, "ID")
+    c.drawString(160, y, "Student Name")
+    c.drawString(450, y, "Signature / Status")
+    c.line(50, y - 5, page_width - 50, y - 5)
+
+    y -= 25
+    c.setFont(FONT_NAME, 11)
+
+    for idx, student in enumerate(students_list, 1):
+        if y < 50:
+            c.showPage()
+            y = page_height - 50
+
+        c.setFont("Helvetica", 10)
+        c.drawString(50, y, str(idx))
+        c.drawString(80, y, str(student["student_id"]))
+
+        formatted_name = format_arabic(student["student_name"])
+        c.setFont(FONT_NAME, 11)
+        c.drawString(160, y, formatted_name)
+
+        c.setFont("Helvetica", 10)
+        c.rect(450, y - 2, 100, 15)
+        y -= 22
+
+    c.save()
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
 def draw_single_sheet(
     student_id,
     student_name,
@@ -294,7 +338,7 @@ def draw_single_sheet(
     c.setFont("Helvetica-Bold", 14)
     c.drawString(70, page_height - 45, f"Exam Code: {exam_id}")
     c.drawString(70, page_height - 65, f"Group: {group_name}")
-    
+
     if is_reference:
         c.setFillColorRGB(0.8, 0.1, 0.1)
         c.drawString(
@@ -309,7 +353,7 @@ def draw_single_sheet(
             page_height - 85,
             f"Form: {form_type} (10 Questions / Max Grade: 10)",
         )
-        
+
     c.setFont("Helvetica", 11)
     c.drawString(70, page_height - 105, f"ID / Code: {student_id}")
 
@@ -318,7 +362,7 @@ def draw_single_sheet(
     c.setFont(FONT_NAME, 14)
     c.drawRightString(page_width - 160, page_height - 45, formatted_name)
 
-    # QR Code payload distinguishing student sheet vs reference answer key
+    # QR Code payload
     qr_payload = json.dumps(
         {
             "is_reference": is_reference,
@@ -399,12 +443,10 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     if not bubble_contours:
         return None, qr_meta, "No bubbles detected."
 
-    # Sort contours top-to-bottom
     bubble_contours = sorted(
         bubble_contours, key=lambda c: cv2.boundingRect(c)[1]
     )
 
-    # Group into rows by Y-coordinate
     rows = []
     current_row = []
     prev_y = None
@@ -429,7 +471,6 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
         if q_idx - 1 >= len(rows):
             break
 
-        # Sort contours in row left-to-right by X-coordinate
         row_contours = sorted(rows[q_idx - 1], key=lambda c: cv2.boundingRect(c)[0])
         marked_idx = None
         max_pixels = 0
@@ -463,8 +504,8 @@ def find_best_name_match(query_name, candidate_names, cutoff=0.55):
 # --- STREAMLIT UI TABS ---
 tab1, tab2, tab3 = st.tabs(
     [
-        "Sheet Generator",
-        "Auto Grader",
+        "Sheet & Attendance Generator",
+        "Auto Grader & Attendance",
         "Master Consolidator",
     ]
 )
@@ -472,10 +513,8 @@ tab1, tab2, tab3 = st.tabs(
 with tab1:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.subheader("1. Download Blank Reference Answer Keys (Form A & B)")
-    st.write("Print these templates, shade in the correct answers, and upload them in the **Auto Grader** tab as reference keys.")
-    
     col_ref_a, col_ref_b = st.columns(2)
-    
+
     with col_ref_a:
         pdf_ref_a = draw_single_sheet(
             student_id="REF_KEY_FORM_A",
@@ -484,13 +523,13 @@ with tab1:
             exam_id="DENT2025",
             form_type="A",
             num_questions=10,
-            is_reference=True
+            is_reference=True,
         )
         st.download_button(
             label="📄 Download Blank Reference Sheet (Form A)",
             data=pdf_ref_a,
             file_name="Reference_Key_Form_A.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
         )
 
     with col_ref_b:
@@ -501,17 +540,17 @@ with tab1:
             exam_id="DENT2025",
             form_type="B",
             num_questions=10,
-            is_reference=True
+            is_reference=True,
         )
         st.download_button(
             label="📄 Download Blank Reference Sheet (Form B)",
             data=pdf_ref_b,
             file_name="Reference_Key_Form_B.pdf",
-            mime="application/pdf"
+            mime="application/pdf",
         )
 
     st.markdown("---")
-    st.subheader("2. Generate Student Form A & Form B Bubble Sheets")
+    st.subheader("2. Generate Student Sheets & Printable Attendance Lists")
     col1, col2 = st.columns(2)
 
     with col1:
@@ -542,11 +581,12 @@ with tab1:
                     f"Parsed {len(df)} total students across {len(df['group'].unique())} groups!"
                 )
 
-                if st.button("🚀 Generate 10-MCQ Student Sheets"):
+                if st.button("🚀 Generate Student Sheets & Attendance PDFs"):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(
                         zip_buffer, "w", zipfile.ZIP_DEFLATED
                     ) as zf:
+                        # 1. Generate Student Bubble Sheets
                         for idx, row in df.iterrows():
                             group = str(row["group"])
                             s_id = str(row["student_id"])
@@ -566,18 +606,29 @@ with tab1:
                                 exam_id=exam_id,
                                 form_type=current_form,
                                 num_questions=10,
-                                is_reference=False
+                                is_reference=False,
                             )
 
                             clean_name = s_name.replace(" ", "_")
                             file_path = f"Group_{group}/Form_{current_form}_sheet_{s_id}_{clean_name}.pdf"
                             zf.writestr(file_path, pdf_bytes)
 
+                        # 2. Generate Group Attendance PDFs
+                        for group_name, group_df in df.groupby("group"):
+                            students_list = group_df.to_dict("records")
+                            att_pdf = generate_attendance_pdf(
+                                group_name, students_list, exam_id
+                            )
+                            zf.writestr(
+                                f"Group_{group_name}/Attendance_Sheet_Group_{group_name}.pdf",
+                                att_pdf,
+                            )
+
                     zip_buffer.seek(0)
                     st.download_button(
-                        label="📥 Download Grouped Student Sheets (ZIP)",
+                        label="📥 Download Student Sheets & Attendance Sheets (ZIP)",
                         data=zip_buffer,
-                        file_name=f"{exam_id}_Student_Sheets.zip",
+                        file_name=f"{exam_id}_Sheets_And_Attendance.zip",
                         mime="application/zip",
                     )
         except Exception as e:
@@ -622,7 +673,7 @@ with tab2:
             st.success("Form B Reference Key loaded successfully!")
 
     st.markdown("---")
-    st.subheader("📁 Batch Upload Student Exam Photos")
+    st.subheader("📁 Batch Upload Student Exam Photos (Auto-Tracks Attendance)")
 
     roster_file_grade = st.file_uploader(
         "Upload Roster Excel File to sync results into",
@@ -647,6 +698,7 @@ with tab2:
             df_students = parse_college_excel(roster_bytes)
 
             df_students["Form"] = "N/A"
+            df_students["Attendance"] = "Absent"
             df_students["Grade (/10)"] = "N/A"
 
             graded_count = 0
@@ -678,12 +730,13 @@ with tab2:
 
                 if student_id and student_id in df_students["student_id"].values:
                     df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
+                    df_students.loc[df_students["student_id"] == student_id, "Attendance"] = "Present"
                     df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
                     graded_count += 1
 
                 progress_bar.progress((idx + 1) / len(mixed_student_imgs))
 
-            st.success(f"Grading Complete! Graded {graded_count} student papers out of 10.")
+            st.success(f"Grading Complete! Graded {graded_count} student papers and recorded attendance.")
             st.dataframe(df_students)
 
             output_excel = io.BytesIO()
@@ -692,9 +745,9 @@ with tab2:
             output_excel.seek(0)
 
             st.download_button(
-                label="📊 Download Graded Excel File (Out of 10)",
+                label="📊 Download Graded & Attendance Excel File",
                 data=output_excel,
-                file_name="Exam_Grades_Out_Of_10.xlsx",
+                file_name="Exam_Grades_And_Attendance.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -737,6 +790,7 @@ with tab3:
                     )
 
                 master_df["Exam_Grade_Out_Of_10"] = "N/A"
+                master_df["Attendance_Status"] = "Absent"
                 master_df["Matched_Form"] = "N/A"
 
                 total_matched = 0
@@ -747,6 +801,7 @@ with tab3:
                     for _, g_row in g_df.iterrows():
                         g_name = g_row.get("student_name") or g_row.get("Name")
                         g_grade = g_row.get("Grade (/10)", "N/A")
+                        g_att = g_row.get("Attendance", "Absent")
                         g_form = g_row.get("Form", "N/A")
 
                         if pd.notna(g_name) and g_grade != "N/A":
@@ -763,12 +818,16 @@ with tab3:
                                 ] = g_grade
                                 master_df.loc[
                                     master_df[name_col_master] == matched_name,
+                                    "Attendance_Status",
+                                ] = g_att
+                                master_df.loc[
+                                    master_df[name_col_master] == matched_name,
                                     "Matched_Form",
                                 ] = g_form
                                 total_matched += 1
 
                 st.success(
-                    f"AI Alignment Complete! Successfully matched {total_matched} students."
+                    f"AI Alignment Complete! Successfully matched {total_matched} students with grades and attendance."
                 )
                 st.dataframe(master_df)
 
