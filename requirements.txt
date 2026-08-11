@@ -1,9 +1,9 @@
 streamlit
-opencv-python-headless
 pandas
 openpyxl
+opencv-python-headless
 reportlab
 qrcode
-pillow
 arabic_reshaper
 python-bidi
+pypdf
