@@ -318,7 +318,7 @@ def draw_single_sheet(
     # Right-aligned Arabic Name
     formatted_name = format_arabic(student_name)
     c.setFont(FONT_NAME, 14)
-    c.drawRightString(page_width - 150, page_height - 45, formatted_name)
+    c.drawRightString(page_width - 160, page_height - 45, formatted_name)
 
     # QR Code
     qr_payload = json.dumps(
@@ -372,7 +372,7 @@ def decode_sheet_qr(image_np):
     return None
 
 
-# --- OMR SCANNER HELPER ---
+# --- IMPROVED OMR SCANNER HELPER (WITH ROW GROUPING) ---
 def scan_bubbles_from_image(image_bytes, num_questions=10):
     np_img = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
@@ -402,25 +402,42 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     if not bubble_contours:
         return None, qr_meta, "No bubbles detected. Please ensure clear lighting."
 
+    # Sort contours top-to-bottom
     bubble_contours = sorted(
         bubble_contours, key=lambda c: cv2.boundingRect(c)[1]
     )
+
+    # Group contours into horizontal rows by Y coordinate threshold
+    rows = []
+    current_row = []
+    prev_y = None
+    y_threshold = 15  # pixels tolerance for same line
+
+    for cnt in bubble_contours:
+        _, y, _, _ = cv2.boundingRect(cnt)
+        if prev_y is None or abs(y - prev_y) <= y_threshold:
+            current_row.append(cnt)
+        else:
+            rows.append(current_row)
+            current_row = [cnt]
+        prev_y = y
+
+    if current_row:
+        rows.append(current_row)
+
     options = ["A", "B", "C", "D"]
     answers = {}
 
     for q_idx in range(1, num_questions + 1):
-        start_idx = (q_idx - 1) * 4
-        if start_idx + 4 > len(bubble_contours):
+        if q_idx - 1 >= len(rows):
             break
 
-        row_contours = sorted(
-            bubble_contours[start_idx : start_idx + 4],
-            key=lambda c: cv2.boundingRect(c)[0],
-        )
+        # Sort current row contours left-to-right by X coordinate
+        row_contours = sorted(rows[q_idx - 1], key=lambda c: cv2.boundingRect(c)[0])
         marked_idx = None
         max_pixels = 0
 
-        for opt_idx, cnt in enumerate(row_contours):
+        for opt_idx, cnt in enumerate(row_contours[:4]):  # Max 4 options per row
             mask = np.zeros(thresh.shape, dtype="uint8")
             cv2.drawContours(mask, [cnt], -1, 255, -1)
             mask = cv2.bitwise_and(thresh, thresh, mask=mask)
@@ -431,7 +448,7 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
                 marked_idx = opt_idx
 
         answers[str(q_idx)] = (
-            options[marked_idx] if marked_idx is not None else "None"
+            options[marked_idx] if (marked_idx is not None and marked_idx < 4) else "None"
         )
 
     return answers, qr_meta, None
