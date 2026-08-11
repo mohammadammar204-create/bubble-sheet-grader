@@ -215,6 +215,19 @@ def format_arabic(text):
     return get_display(reshaped_text)
 
 
+def normalize_text(text):
+    """Normalizes string/Arabic text to prevent N/A failures due to minor formatting differences."""
+    if not text or pd.isna(text):
+        return ""
+    text = str(text).strip()
+    text = re.sub(r"\s+", " ", text)
+    text = text.replace("\u200b", "").replace("\xa0", " ")
+    text = re.sub(r"[أإآ]", "ا", text)
+    text = re.sub(r"ى", "ي", text)
+    text = re.sub(r"ة", "ه", text)
+    return text.strip()
+
+
 def parse_college_excel(file_bytes):
     df_raw = pd.read_excel(io.BytesIO(file_bytes), header=None)
     students = []
@@ -457,13 +470,26 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     return answers, qr_meta, None
 
 
-def find_best_name_match(query_name, candidate_names, cutoff=0.55):
+def find_best_name_match(query_name, candidate_names, cutoff=0.45):
     if not query_name or pd.isna(query_name):
         return None
+    
+    norm_query = normalize_text(query_name)
+    candidates_list = [str(c) for c in candidate_names if pd.notna(c)]
+    
+    for cand in candidates_list:
+        if normalize_text(cand) == norm_query:
+            return cand
+
+    norm_candidates = {normalize_text(cand): cand for cand in candidates_list}
     matches = difflib.get_close_matches(
-        str(query_name), [str(c) for c in candidate_names], n=1, cutoff=cutoff
+        norm_query, list(norm_candidates.keys()), n=1, cutoff=cutoff
     )
-    return matches[0] if matches else None
+    
+    if matches:
+        return norm_candidates[matches[0]]
+        
+    return None
 
 
 # --- STREAMLIT UI TABS ---
@@ -697,11 +723,18 @@ with tab2:
                     score_out_of_10 = float(correct_count)
 
                     matched_row = False
-                    if student_id and student_id in df_students["student_id"].values:
-                        df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
-                        df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
-                        matched_row = True
-                    elif student_name:
+                    
+                    # Robust ID Matching
+                    if student_id:
+                        clean_target_id = re.sub(r"\.0$", "", str(student_id)).strip()
+                        mask_id = df_students["student_id"] == clean_target_id
+                        if mask_id.any():
+                            df_students.loc[mask_id, "Form"] = form_detected
+                            df_students.loc[mask_id, "Grade (/10)"] = score_out_of_10
+                            matched_row = True
+
+                    # Robust Name Matching if ID fails
+                    if not matched_row and student_name:
                         best_match = find_best_name_match(student_name, df_students["student_name"].values)
                         if best_match:
                             df_students.loc[df_students["student_name"] == best_match, "Form"] = form_detected
@@ -775,15 +808,21 @@ with tab3:
                     g_df = pd.read_excel(g_file)
 
                     for _, g_row in g_df.iterrows():
-                        g_name = g_row.get("student_name") or g_row.get("Name")
+                        g_name = g_row.get("student_name") if "student_name" in g_row else g_row.get("Name")
+                        if pd.isna(g_name):
+                            for c in g_df.columns:
+                                if "اسم" in str(c) or "name" in str(c).lower():
+                                    g_name = g_row.get(c)
+                                    break
+                                    
                         g_grade = g_row.get("Grade (/10)", "N/A")
                         g_form = g_row.get("Form", "N/A")
 
-                        if pd.notna(g_name) and g_grade != "N/A":
+                        if pd.notna(g_name) and str(g_grade) != "N/A" and pd.notna(g_grade):
                             matched_name = find_best_name_match(
                                 g_name,
                                 master_df[name_col_master].values,
-                                cutoff=0.55,
+                                cutoff=0.45,
                             )
 
                             if matched_name:
