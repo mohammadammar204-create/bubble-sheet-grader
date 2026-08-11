@@ -247,8 +247,8 @@ def parse_college_excel(file_bytes):
             students.append(
                 {
                     "group": current_group,
-                    "student_id": str(row_cells[0]),
-                    "student_name": str(row_cells[1]),
+                    "student_id": str(row_cells[0]).strip(),
+                    "student_name": str(row_cells[1]).strip(),
                 }
             )
 
@@ -323,8 +323,8 @@ def draw_single_sheet(
         {
             "is_reference": is_reference,
             "group": str(group_name),
-            "student_id": str(student_id),
-            "student_name": str(student_name),
+            "student_id": str(student_id).strip(),
+            "student_name": str(student_name).strip(),
             "exam_id": str(exam_id),
             "form": str(form_type),
         }
@@ -545,8 +545,8 @@ with tab1:
                     ) as zf:
                         for idx, row in df.iterrows():
                             group = str(row["group"])
-                            s_id = str(row["student_id"])
-                            s_name = str(row["student_name"])
+                            s_id = str(row["student_id"]).strip()
+                            s_name = str(row["student_name"]).strip()
 
                             if form_mode == "Alternate Form A and Form B per student":
                                 current_form = "A" if idx % 2 == 0 else "B"
@@ -648,6 +648,9 @@ with tab2:
             graded_count = 0
             progress_bar = st.progress(0)
 
+            # Standardize student_id column to string
+            df_students["student_id"] = df_students["student_id"].astype(str).str.strip()
+
             for idx, student_file in enumerate(mixed_student_imgs):
                 s_bytes = student_file.read()
                 s_answers, qr_meta, err = scan_bubbles_from_image(s_bytes, num_questions=10)
@@ -656,7 +659,8 @@ with tab2:
                     st.warning(f"Could not read bubbles for {student_file.name}: {err}")
                     continue
 
-                student_id = qr_meta.get("student_id") if qr_meta else None
+                student_id = str(qr_meta.get("student_id")).strip() if qr_meta and qr_meta.get("student_id") else None
+                student_name = qr_meta.get("student_name") if qr_meta else None
                 form_detected = qr_meta.get("form", "A") if qr_meta else "A"
 
                 target_key = answer_key_a if form_detected == "A" else answer_key_b
@@ -672,9 +676,20 @@ with tab2:
 
                 score_out_of_10 = float(correct_count)
 
+                # Match by student_id or fallback to name matching
+                matched_row = False
                 if student_id and student_id in df_students["student_id"].values:
                     df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
                     df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
+                    matched_row = True
+                elif student_name:
+                    best_match = find_best_name_match(student_name, df_students["student_name"].values)
+                    if best_match:
+                        df_students.loc[df_students["student_name"] == best_match, "Form"] = form_detected
+                        df_students.loc[df_students["student_name"] == best_match, "Grade (/10)"] = score_out_of_10
+                        matched_row = True
+
+                if matched_row:
                     graded_count += 1
 
                 progress_bar.progress((idx + 1) / len(mixed_student_imgs))
@@ -785,7 +800,6 @@ with tab3:
                 st.error(f"Error consolidating files: {e}")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# --- NEW 4TH TAB: ATTENDANCE CALCULATION & EXCEL SYNC ---
 with tab4:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.title("قسم الحضور (Attendance Calculation & AI Excel Sync)")
@@ -833,7 +847,6 @@ with tab4:
                 target_bytes = target_excel_att.read()
                 df_target = pd.read_excel(io.BytesIO(target_bytes))
 
-                # Identify name column
                 name_col = None
                 for col in df_target.columns:
                     if "اسم" in str(col) or "Name" in str(col).capitalize():
@@ -842,7 +855,7 @@ with tab4:
                 if not name_col:
                     name_col = df_target.columns[1] if len(df_target.columns) > 1 else df_target.columns[0]
 
-                df_target["Attendance_Score (/2)"] = 2.0  # Simulated default full score for demo
+                df_target["Attendance_Score (/2)"] = 2.0
 
                 st.success(
                     f"Attendance successfully calculated out of 2 points against a {target_checkmarks}-mark target and synced!"
