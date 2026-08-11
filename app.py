@@ -1,29 +1,24 @@
-import base64
 import streamlit as st
 
+# Set page configuration
+st.set_page_config(page_title="Grading System", layout="wide")
 
-# Helper function to encode image to base64
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+# High-quality dark abstract image URL for the background
+bg_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
 
-
-# Encode background image
-bg_base64 = get_base64_of_bin_file("image_9ebd99.jpg")
-
+# Inject Custom CSS
 st.markdown(
     f"""
     <style>
-    /* 1. Full-screen Blurred Background with Dark Overlay */
+    /* 1. Full-screen Blurred Background with Dark Tint Overlay */
     .stApp {{
         background: 
             linear-gradient(rgba(12, 14, 22, 0.65), rgba(12, 14, 22, 0.65)),
-            url("data:image/jpeg;base64,{bg_base64}") no-repeat center center fixed;
+            url("{bg_url}") no-repeat center center fixed;
         background-size: cover;
     }}
 
-    /* 2. Sleek Glass Header Container (Replaces old hero text) */
+    /* 2. Glassmorphism Header (Replaces old text) */
     .header-card {{
         background: rgba(255, 255, 255, 0.05);
         backdrop-filter: blur(25px);
@@ -58,7 +53,7 @@ st.markdown(
         -webkit-backdrop-filter: blur(20px);
     }}
 
-    /* Inactive Tab Styling */
+    /* Inactive Tabs */
     .stTabs [data-baseweb="tab"] {{
         height: 40px;
         border-radius: 10px;
@@ -71,13 +66,13 @@ st.markdown(
         transition: all 0.25s ease;
     }}
 
-    /* Hover State for Tabs */
+    /* Hover Tab State */
     .stTabs [data-baseweb="tab"]:hover {{
         color: rgba(255, 255, 255, 0.95) !important;
         background-color: rgba(255, 255, 255, 0.08) !important;
     }}
 
-    /* Active Tab Highlight (Translucent Glass Pill) */
+    /* Active Tab Highlight (Sleek Translucent Glass Pill) */
     .stTabs [aria-selected="true"] {{
         background: rgba(255, 255, 255, 0.18) !important;
         color: #FFFFFF !important;
@@ -87,15 +82,45 @@ st.markdown(
         backdrop-filter: blur(10px);
     }}
 
-    /* Remove Default Streamlit Tab Indicator Line */
+    /* Hide standard red/blue indicator underline */
     .stTabs [data-baseweb="tab-highlight-title"] {{
         display: none !important;
     }}
     </style>
 
+    <!-- Display the header card -->
     <div class="header-card">
         <h1 class="title-text">Grading system</h1>
     </div>
 """,
     unsafe_allow_html=True,
 )
+
+# ----------------------------------------------------
+# Main Navigation Tabs
+# ----------------------------------------------------
+tab1, tab2, tab3, tab4 = st.tabs(
+    [
+        "1 Sheet Generator",
+        "2 Auto Grader",
+        "3 Master Consolidator",
+        "4 الحضور (Attendance)",
+    ]
+)
+
+with tab1:
+    st.write("### Sheet Generator Content")
+
+with tab2:
+    st.write("### Upload Answer Keys & Batch Grade Mixed Papers")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.file_uploader("Upload Reference Answer Sheet Photo for Form A")
+    with col2:
+        st.file_uploader("Upload Reference Answer Sheet Photo for Form B")
+
+with tab3:
+    st.write("### Master Consolidator Content")
+
+with tab4:
+    st.write("### Attendance Tracker Content")
