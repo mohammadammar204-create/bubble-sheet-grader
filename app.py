@@ -3,6 +3,7 @@ import json
 import os
 import urllib.request
 import zipfile
+import difflib
 import arabic_reshaper
 import cv2
 import numpy as np
@@ -37,10 +38,10 @@ FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="Bubble Sheet Exam Manager - Form A/B & Reference Grading", page_icon="📝", layout="wide"
+    page_title="10 MCQ Auto-Form OMR & AI Master Excel Sync", page_icon="📝", layout="wide"
 )
 
-st.title("📝 Exam Creator & OMR Grader (Form A/B & Reference Photo Key)")
+st.title("📝 10-MCQ OMR Grader & AI Master Roster Consolidation")
 
 # --- ARABIC TEXT HELPER ---
 def format_arabic(text):
@@ -76,15 +77,15 @@ def parse_college_excel(file_bytes):
         if len(row_cells) >= 2 and row_cells[0].isdigit():
             students.append({
                 "group": current_group,
-                "student_id": row_cells[0],
-                "student_name": row_cells[1]
+                "student_id": str(row_cells[0]),
+                "student_name": str(row_cells[1])
             })
 
     return pd.DataFrame(students)
 
 
-# --- BUBBLE SHEET PDF GENERATOR (WITH FORM A / B) ---
-def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="A", num_questions=20):
+# --- BUBBLE SHEET PDF GENERATOR (10 MCQ, OUT OF 10) ---
+def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="A", num_questions=10):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     page_width, page_height = letter
@@ -98,11 +99,11 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="
 
     # Header Details
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(70, page_height - 45, f"Exam ID: {exam_id}")
+    c.drawString(70, page_height - 45, f"Exam Code: {exam_id}")
     c.drawString(70, page_height - 65, f"Group: {group_name}")
-    c.drawString(70, page_height - 85, f"Form: {form_type}")
+    c.drawString(70, page_height - 85, f"Form: {form_type} (10 Questions / Max Grade: 10)")
     c.setFont("Helvetica", 11)
-    c.drawString(70, page_height - 102, f"Student ID: {student_id}")
+    c.drawString(70, page_height - 105, f"Student ID: {student_id}")
 
     # Right-aligned Arabic Name
     formatted_name = format_arabic(student_name)
@@ -113,6 +114,7 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="
     qr_payload = json.dumps({
         "group": str(group_name),
         "student_id": str(student_id),
+        "student_name": str(student_name),
         "exam_id": str(exam_id),
         "form": str(form_type)
     })
@@ -124,37 +126,50 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="
         canvas.ImageReader(qr_buffer),
         page_width - 130,
         page_height - 135,
-        width=80,
-        height=80,
+        width=85,
+        height=85,
     )
 
-    # Bubbles Grid
+    # 10 Bubbles Grid
     y_start = page_height - 180
     options = ["A", "B", "C", "D"]
     for q_idx in range(1, num_questions + 1):
-        c.setFont("Helvetica-Bold", 11)
+        c.setFont("Helvetica-Bold", 12)
         c.drawString(70, y_start, f"{q_idx:02d}.")
         for opt_idx, opt in enumerate(options):
-            x_pos = 110 + (opt_idx * 40)
-            c.circle(x_pos, y_start + 3, 9, stroke=1, fill=0)
-            c.setFont("Helvetica", 8)
-            c.drawString(x_pos - 3, y_start, opt)
-        y_start -= 24
-        if y_start < 60:
-            break
+            x_pos = 120 + (opt_idx * 45)
+            c.circle(x_pos, y_start + 4, 10, stroke=1, fill=0)
+            c.setFont("Helvetica", 9)
+            c.drawString(x_pos - 3, y_start + 1, opt)
+        y_start -= 32
 
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
 
 
-# --- OMR SCANNER HELPER (READS BUBBLES FROM IMAGE) ---
-def scan_bubbles_from_image(image_bytes, num_questions=20):
+# --- QR CODE DECODER ---
+def decode_sheet_qr(image_np):
+    qr_detector = cv2.QRCodeDetector()
+    data, _, _ = qr_detector.detectAndDecode(image_np)
+    if data:
+        try:
+            return json.loads(data)
+        except Exception:
+            pass
+    return None
+
+
+# --- OMR SCANNER HELPER (10 BUBBLES SCAN) ---
+def scan_bubbles_from_image(image_bytes, num_questions=10):
     np_img = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
     if image is None:
-        return None, "Invalid image format uploaded."
+        return None, None, "Invalid image format uploaded."
+
+    # Decode QR metadata
+    qr_meta = decode_sheet_qr(image)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -166,11 +181,11 @@ def scan_bubbles_from_image(image_bytes, num_questions=20):
     for c in contours:
         (x, y, w, h) = cv2.boundingRect(c)
         ar = w / float(h)
-        if 12 <= w <= 50 and 12 <= h <= 50 and 0.75 <= ar <= 1.25:
+        if 12 <= w <= 60 and 12 <= h <= 60 and 0.75 <= ar <= 1.25:
             bubble_contours.append(c)
 
     if not bubble_contours:
-        return None, "No bubbles detected. Please ensure clear lighting and straight photo."
+        return None, qr_meta, "No bubbles detected. Please ensure clear lighting and straight photo."
 
     bubble_contours = sorted(bubble_contours, key=lambda c: cv2.boundingRect(c)[1])
     options = ["A", "B", "C", "D"]
@@ -200,23 +215,37 @@ def scan_bubbles_from_image(image_bytes, num_questions=20):
 
         answers[str(q_idx)] = options[marked_idx] if marked_idx is not None else "None"
 
-    return answers, None
+    return answers, qr_meta, None
+
+
+# --- AI FUZZY NAME MATCHING HELPER ---
+def find_best_name_match(query_name, candidate_names, cutoff=0.6):
+    """Uses fuzzy String matching to align names across group files."""
+    if not query_name or pd.isna(query_name):
+        return None
+    matches = difflib.get_close_matches(str(query_name), [str(c) for c in candidate_names], n=1, cutoff=cutoff)
+    return matches[0] if matches else None
 
 
 # --- STREAMLIT UI ---
-tab1, tab2 = st.tabs(["1️⃣ Generate Form A & B Sheets", "2️⃣ Reference Photo Key & Grading"])
+tab1, tab2, tab3 = st.tabs([
+    "1️⃣ Generate 10-MCQ Form A & B Sheets", 
+    "2️⃣ Batch Grade & Auto-Detect Forms", 
+    "3️⃣ AI Master Excel Consolidator"
+])
 
 with tab1:
-    st.header("Step 1: Generate Form A & Form B Sheets for Lab Groups")
+    st.header("Step 1: Generate 10-MCQ Form A & Form B Bubble Sheets")
     col1, col2 = st.columns(2)
 
     with col1:
         exam_id = st.text_input("Exam Code or Title", "DENT2025")
-        num_questions = st.number_input("Number of Questions", min_value=1, max_value=50, value=20)
+        num_questions = 10  # Always 10 MCQ as requested
+        st.info("📌 Sheet configuration: Fixed to 10 Questions (Grade out of 10).")
         form_mode = st.radio("Form Distribution Strategy", ["Alternate Form A and Form B per student", "All Form A", "All Form B"])
 
     with col2:
-        roster_file = st.file_uploader("Upload College Roster Excel File (.xlsx)", type=["xlsx", "xls"])
+        roster_file = st.file_uploader("Upload College Roster Excel File (.xlsx)", type=["xlsx", "xls"], key="roster_gen")
 
     if roster_file and exam_id:
         try:
@@ -226,7 +255,7 @@ with tab1:
             if not df.empty:
                 st.success(f"Parsed {len(df)} total students across {len(df['group'].unique())} groups!")
 
-                if st.button("🚀 Generate Form A/B Sheets (Group Folders)"):
+                if st.button("🚀 Generate 10-MCQ Sheets (Group Folders)"):
                     zip_buffer = io.BytesIO()
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
                         for idx, row in df.iterrows():
@@ -234,7 +263,6 @@ with tab1:
                             s_id = str(row["student_id"])
                             s_name = str(row["student_name"])
 
-                            # Assign Form A or B
                             if form_mode == "Alternate Form A and Form B per student":
                                 current_form = "A" if idx % 2 == 0 else "B"
                             elif form_mode == "All Form A":
@@ -248,7 +276,7 @@ with tab1:
                                 group_name=group,
                                 exam_id=exam_id,
                                 form_type=current_form,
-                                num_questions=num_questions
+                                num_questions=10
                             )
 
                             clean_name = s_name.replace(" ", "_")
@@ -257,89 +285,176 @@ with tab1:
 
                     zip_buffer.seek(0)
                     st.download_button(
-                        label="📥 Download Grouped Form A/B Sheets (ZIP)",
+                        label="📥 Download Grouped 10-MCQ Form A/B Sheets (ZIP)",
                         data=zip_buffer,
-                        file_name=f"{exam_id}_FormA_FormB_sheets.zip",
+                        file_name=f"{exam_id}_10MCQ_FormA_FormB_sheets.zip",
                         mime="application/zip",
                     )
         except Exception as e:
             st.error(f"Error processing file: {e}")
 
 with tab2:
-    st.header("Step 2: Upload Reference Photo Keys & Grade Student Papers")
+    st.header("Step 2: Upload Answer Keys & Batch Grade Mixed Papers")
 
-    st.subheader("📷 1. Upload Reference Key Photos (Correct Answers)")
     col_a, col_b = st.columns(2)
-
     with col_a:
-        key_img_a = st.file_uploader("Upload Reference Answer Sheet Photo for Form A", type=["jpg", "png", "jpeg"])
+        key_img_a = st.file_uploader("Upload Reference Answer Sheet Photo for Form A (10 MCQ)", type=["jpg", "png", "jpeg"], key="key_a")
     with col_b:
-        key_img_b = st.file_uploader("Upload Reference Answer Sheet Photo for Form B (Optional)", type=["jpg", "png", "jpeg"])
+        key_img_b = st.file_uploader("Upload Reference Answer Sheet Photo for Form B (10 MCQ)", type=["jpg", "png", "jpeg"], key="key_b")
 
     answer_key_a = None
     answer_key_b = None
 
     if key_img_a:
         key_a_bytes = key_img_a.read()
-        answer_key_a, err_a = scan_bubbles_from_image(key_a_bytes, num_questions=num_questions)
+        answer_key_a, _, err_a = scan_bubbles_from_image(key_a_bytes, num_questions=10)
         if err_a:
             st.error(f"Form A Reference Key Error: {err_a}")
         else:
-            st.success("Form A Reference Answer Key loaded successfully!")
-            st.json(answer_key_a)
+            st.success("Form A Reference Answer Key (10 MCQ) loaded successfully!")
 
     if key_img_b:
         key_b_bytes = key_img_b.read()
-        answer_key_b, err_b = scan_bubbles_from_image(key_b_bytes, num_questions=num_questions)
+        answer_key_b, _, err_b = scan_bubbles_from_image(key_b_bytes, num_questions=10)
         if err_b:
             st.error(f"Form B Reference Key Error: {err_b}")
         else:
-            st.success("Form B Reference Answer Key loaded successfully!")
-            st.json(answer_key_b)
+            st.success("Form B Reference Answer Key (10 MCQ) loaded successfully!")
 
     st.markdown("---")
-    st.subheader("📝 2. Upload & Grade Student Exam Photos")
+    st.subheader("📁 Batch Upload Student Exam Photos & Grade Out of 10")
 
-    student_img = st.file_uploader("Upload Student Exam Photo", type=["jpg", "png", "jpeg"])
-    selected_form = st.radio("Which Form is this student paper?", ["Form A", "Form B"])
+    roster_file_grade = st.file_uploader("Upload Roster Excel File to sync results into", type=["xlsx", "xls"], key="roster_grade")
+    mixed_student_imgs = st.file_uploader("Upload Mixed Student Exam Photos (Select Multiple)", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
-    if student_img:
-        target_key = answer_key_a if selected_form == "Form A" else answer_key_b
-
-        if not target_key:
-            st.warning(f"Please upload the reference key photo for {selected_form} above first!")
+    if st.button("⚡ Process All Papers & Grade Out of 10"):
+        if not roster_file_grade:
+            st.error("Please upload the Roster Excel file.")
+        elif not answer_key_a and not answer_key_b:
+            st.error("Please upload at least one Answer Key Reference Photo (Form A or Form B).")
+        elif not mixed_student_imgs:
+            st.error("Please upload student photos.")
         else:
-            col_preview, col_result = st.columns(2)
-            with col_preview:
-                st.image(student_img, caption="Student Paper", use_column_width=True)
+            roster_bytes = roster_file_grade.read()
+            df_students = parse_college_excel(roster_bytes)
 
-            with col_result:
-                if st.button("🔍 Grade Student Paper"):
-                    student_bytes = student_img.read()
-                    student_answers, err = scan_bubbles_from_image(student_bytes, num_questions=num_questions)
+            df_students["Form"] = "N/A"
+            df_students["Grade (/10)"] = "N/A"
 
-                    if err:
-                        st.error(err)
-                    else:
-                        correct_count = 0
-                        total_q = len(target_key)
-                        grading_details = {}
+            graded_count = 0
+            progress_bar = st.progress(0)
 
-                        for q_idx in range(1, total_q + 1):
-                            q_str = str(q_idx)
-                            s_ans = student_answers.get(q_str, "None")
-                            k_ans = target_key.get(q_str, "None")
-                            is_correct = (s_ans == k_ans) and (s_ans != "None")
-                            if is_correct:
-                                correct_count += 1
+            for idx, student_file in enumerate(mixed_student_imgs):
+                s_bytes = student_file.read()
+                s_answers, qr_meta, err = scan_bubbles_from_image(s_bytes, num_questions=10)
 
-                            grading_details[f"Q{q_idx}"] = {
-                                "Student Answer": s_ans,
-                                "Correct Key": k_ans,
-                                "Result": "✅ Pass" if is_correct else "❌ Fail"
-                            }
+                if err or not s_answers:
+                    st.warning(f"Could not read bubbles for {student_file.name}: {err}")
+                    continue
 
-                        score_pct = round((correct_count / total_q) * 100, 2)
-                        st.metric("Final Score", f"{correct_count}/{total_q}")
-                        st.metric("Percentage", f"{score_pct}%")
-                        st.dataframe(pd.DataFrame.from_dict(grading_details, orient="index"))
+                student_id = qr_meta.get("student_id") if qr_meta else None
+                form_detected = qr_meta.get("form", "A") if qr_meta else "A"
+
+                target_key = answer_key_a if form_detected == "A" else answer_key_b
+                if not target_key:
+                    st.warning(f"Skipped {student_file.name}: No answer key uploaded for Form {form_detected}.")
+                    continue
+
+                correct_count = 0
+                for q_idx in range(1, 11):
+                    q_str = str(q_idx)
+                    if s_answers.get(q_str) == target_key.get(q_str) and s_answers.get(q_str) != "None":
+                        correct_count += 1
+
+                score_out_of_10 = float(correct_count)
+
+                if student_id and student_id in df_students["student_id"].values:
+                    df_students.loc[df_students["student_id"] == student_id, "Form"] = form_detected
+                    df_students.loc[df_students["student_id"] == student_id, "Grade (/10)"] = score_out_of_10
+                    graded_count += 1
+
+                progress_bar.progress((idx + 1) / len(mixed_student_imgs))
+
+            st.success(f"Grading Complete! Graded {graded_count} student papers out of 10.")
+            st.dataframe(df_students)
+
+            output_excel = io.BytesIO()
+            with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
+                df_students.to_excel(writer, index=False, sheet_name="Exam Results Out of 10")
+            output_excel.seek(0)
+
+            st.download_button(
+                label="📊 Download Graded Excel File (Out of 10)",
+                data=output_excel,
+                file_name="Exam_Grades_Out_Of_10.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+
+with tab3:
+    st.header("Step 3: AI Master Excel Consolidator (Combines All Group Excels)")
+    st.write("Upload a **Master Reference Excel File** (containing all student names across all groups) along with multiple **Group Excel files** generated from grading. The AI will automatically align student names and merge all grades cleanly without errors or missing students.")
+
+    master_excel_file = st.file_uploader("Upload Master Reference Excel Sheet (All Student Names)", type=["xlsx", "xls"], key="master_ref")
+    group_excel_files = st.file_uploader("Upload Graded Group Excel Files (Select Multiple)", type=["xlsx", "xls"], accept_multiple_files=True, key="group_excels")
+
+    if st.button("🤖 Auto-Consolidate & Align Grades with AI Match"):
+        if not master_excel_file:
+            st.error("Please upload the Master Reference Excel file.")
+        elif not group_excel_files:
+            st.error("Please upload at least one group Excel file.")
+        else:
+            try:
+                # Load Master Reference
+                master_df = pd.read_excel(master_excel_file)
+                st.write("Master Sheet Preview:", master_df.head(3))
+
+                # Identify Student Name Column in Master
+                name_col_master = None
+                for col in master_df.columns:
+                    if "اسم" in str(col) or "Name" in str(col).capitalize():
+                        name_col_master = col
+                        break
+
+                if not name_col_master:
+                    name_col_master = master_df.columns[1] if len(master_df.columns) > 1 else master_df.columns[0]
+
+                # Prepare Grade Column
+                master_df["Exam_Grade_Out_Of_10"] = "N/A"
+                master_df["Matched_Form"] = "N/A"
+
+                total_matched = 0
+
+                # Process each Group Excel
+                for g_file in group_excel_files:
+                    g_df = pd.read_excel(g_file)
+
+                    for _, g_row in g_df.iterrows():
+                        g_name = g_row.get("student_name") or g_row.get("Name")
+                        g_grade = g_row.get("Grade (/10)", "N/A")
+                        g_form = g_row.get("Form", "N/A")
+
+                        if pd.notna(g_name) and g_grade != "N/A":
+                            # Use AI Fuzzy matching to match name to Master Sheet
+                            matched_name = find_best_name_match(g_name, master_df[name_col_master].values, cutoff=0.55)
+
+                            if matched_name:
+                                master_df.loc[master_df[name_col_master] == matched_name, "Exam_Grade_Out_Of_10"] = g_grade
+                                master_df.loc[master_df[name_col_master] == matched_name, "Matched_Form"] = g_form
+                                total_matched += 1
+
+                st.success(f"AI Alignment Complete! Successfully matched and assigned grades for {total_matched} students into the Master Excel sheet.")
+                st.dataframe(master_df)
+
+                master_output = io.BytesIO()
+                with pd.ExcelWriter(master_output, engine="openpyxl") as writer:
+                    master_df.to_excel(writer, index=False, sheet_name="Master Final Grades")
+                master_output.seek(0)
+
+                st.download_button(
+                    label="📥 Download Consolidated Master Excel File with All Grades",
+                    data=master_output,
+                    file_name="Master_Final_Consolidated_Grades.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception as e:
+                st.error(f"Error consolidating files: {e}")
