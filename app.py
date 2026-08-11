@@ -47,9 +47,7 @@ def load_arabic_font():
 FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(
-    page_title="OMR & Attendance Studio", page_icon="⚡", layout="wide"
-)
+st.set_page_config(page_title="Grading System", page_icon="⚡", layout="wide")
 
 # Background fallback image
 bg_url = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=1920&auto=format&fit=crop"
@@ -95,12 +93,6 @@ st.markdown(
         -webkit-text-fill-color: transparent;
         margin: 0;
         line-height: 1.1;
-    }}
-
-    .subtitle-text {{
-        font-size: 0.95rem;
-        color: rgba(255, 255, 255, 0.65);
-        margin-top: 6px;
     }}
 
     /* 3. Section Cards */
@@ -220,8 +212,7 @@ st.markdown(
     </style>
 
     <div class="header-card">
-        <h1 class="title-text">OMR & Attendance Studio</h1>
-        <div class="subtitle-text">Precision 10-MCQ Bubble Grading, AI Master Excel Consolidator & Intelligent Attendance Tracking</div>
+        <h1 class="title-text">Grading System</h1>
     </div>
 """,
     unsafe_allow_html=True,
@@ -496,10 +487,10 @@ def process_attendance_image(image_np, max_marks_target):
 # --- STREAMLIT UI TABS ---
 tab1, tab2, tab3, tab4 = st.tabs(
     [
-        "1️⃣ Sheet Generator",
-        "2️⃣ Auto Grader",
-        "3️⃣ Master Consolidator",
-        "4️⃣ الحضور (Attendance)",
+        "Sheet Generator",
+        "Auto Grader",
+        "Master Consolidator",
+        "الحضور (Attendance)",
     ]
 )
 
