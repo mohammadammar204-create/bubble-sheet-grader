@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import qrcode
 import streamlit as st
+import pypdf
 from bidi.algorithm import get_display
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -38,10 +39,10 @@ FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="10 MCQ Auto-Form OMR & AI Master Excel Sync", page_icon="📝", layout="wide"
+    page_title="10 MCQ OMR & Attendance System", page_icon="📝", layout="wide"
 )
 
-st.title("📝 10-MCQ OMR Grader & AI Master Roster Consolidation")
+st.title("📝 10-MCQ OMR Grader, AI Master Excel & الحضور (Attendance)")
 
 # --- ARABIC TEXT HELPER ---
 def format_arabic(text):
@@ -160,7 +161,7 @@ def decode_sheet_qr(image_np):
     return None
 
 
-# --- OMR SCANNER HELPER (10 BUBBLES SCAN) ---
+# --- OMR SCANNER HELPER ---
 def scan_bubbles_from_image(image_bytes, num_questions=10):
     np_img = np.frombuffer(image_bytes, np.uint8)
     image = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
@@ -168,7 +169,6 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
     if image is None:
         return None, None, "Invalid image format uploaded."
 
-    # Decode QR metadata
     qr_meta = decode_sheet_qr(image)
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -219,19 +219,47 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
 
 
 # --- AI FUZZY NAME MATCHING HELPER ---
-def find_best_name_match(query_name, candidate_names, cutoff=0.6):
-    """Uses fuzzy String matching to align names across group files."""
+def find_best_name_match(query_name, candidate_names, cutoff=0.55):
     if not query_name or pd.isna(query_name):
         return None
     matches = difflib.get_close_matches(str(query_name), [str(c) for c in candidate_names], n=1, cutoff=cutoff)
     return matches[0] if matches else None
 
 
+# --- HANDWRITTEN CHECKMARK ATTENDANCE COUNTER ---
+def process_attendance_image(image_np, max_marks_target):
+    gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+    )
+
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    mark_boxes = []
+
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        area = cv2.contourArea(c)
+        if 8 <= w <= 45 and 8 <= h <= 45 and 30 <= area <= 1200:
+            mark_boxes.append((x, y, w, h))
+
+    total_marks_found = len(mark_boxes)
+    calculated_attendance = min(total_marks_found, max_marks_target)
+    
+    if max_marks_target > 0:
+        score_out_of_2 = round((calculated_attendance / max_marks_target) * 2.0, 2)
+    else:
+        score_out_of_2 = 0.0
+
+    return total_marks_found, score_out_of_2
+
+
 # --- STREAMLIT UI ---
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "1️⃣ Generate 10-MCQ Form A & B Sheets", 
     "2️⃣ Batch Grade & Auto-Detect Forms", 
-    "3️⃣ AI Master Excel Consolidator"
+    "3️⃣ AI Master Excel Consolidator",
+    "4️⃣ الحضور (Attendance)"
 ])
 
 with tab1:
@@ -240,7 +268,7 @@ with tab1:
 
     with col1:
         exam_id = st.text_input("Exam Code or Title", "DENT2025")
-        num_questions = 10  # Always 10 MCQ as requested
+        num_questions = 10
         st.info("📌 Sheet configuration: Fixed to 10 Questions (Grade out of 10).")
         form_mode = st.radio("Form Distribution Strategy", ["Alternate Form A and Form B per student", "All Form A", "All Form B"])
 
@@ -391,8 +419,8 @@ with tab2:
             )
 
 with tab3:
-    st.header("Step 3: AI Master Excel Consolidator (Combines All Group Excels)")
-    st.write("Upload a **Master Reference Excel File** (containing all student names across all groups) along with multiple **Group Excel files** generated from grading. The AI will automatically align student names and merge all grades cleanly without errors or missing students.")
+    st.header("Step 3: AI Master Excel Consolidator")
+    st.write("Upload a **Master Reference Excel File** along with multiple **Group Excel files**. The AI will automatically align student names and merge all grades cleanly.")
 
     master_excel_file = st.file_uploader("Upload Master Reference Excel Sheet (All Student Names)", type=["xlsx", "xls"], key="master_ref")
     group_excel_files = st.file_uploader("Upload Graded Group Excel Files (Select Multiple)", type=["xlsx", "xls"], accept_multiple_files=True, key="group_excels")
@@ -404,11 +432,7 @@ with tab3:
             st.error("Please upload at least one group Excel file.")
         else:
             try:
-                # Load Master Reference
                 master_df = pd.read_excel(master_excel_file)
-                st.write("Master Sheet Preview:", master_df.head(3))
-
-                # Identify Student Name Column in Master
                 name_col_master = None
                 for col in master_df.columns:
                     if "اسم" in str(col) or "Name" in str(col).capitalize():
@@ -418,13 +442,11 @@ with tab3:
                 if not name_col_master:
                     name_col_master = master_df.columns[1] if len(master_df.columns) > 1 else master_df.columns[0]
 
-                # Prepare Grade Column
                 master_df["Exam_Grade_Out_Of_10"] = "N/A"
                 master_df["Matched_Form"] = "N/A"
 
                 total_matched = 0
 
-                # Process each Group Excel
                 for g_file in group_excel_files:
                     g_df = pd.read_excel(g_file)
 
@@ -434,7 +456,6 @@ with tab3:
                         g_form = g_row.get("Form", "N/A")
 
                         if pd.notna(g_name) and g_grade != "N/A":
-                            # Use AI Fuzzy matching to match name to Master Sheet
                             matched_name = find_best_name_match(g_name, master_df[name_col_master].values, cutoff=0.55)
 
                             if matched_name:
@@ -442,7 +463,7 @@ with tab3:
                                 master_df.loc[master_df[name_col_master] == matched_name, "Matched_Form"] = g_form
                                 total_matched += 1
 
-                st.success(f"AI Alignment Complete! Successfully matched and assigned grades for {total_matched} students into the Master Excel sheet.")
+                st.success(f"AI Alignment Complete! Successfully matched {total_matched} students.")
                 st.dataframe(master_df)
 
                 master_output = io.BytesIO()
@@ -451,10 +472,111 @@ with tab3:
                 master_output.seek(0)
 
                 st.download_button(
-                    label="📥 Download Consolidated Master Excel File with All Grades",
+                    label="📥 Download Consolidated Master Excel File",
                     data=master_output,
                     file_name="Master_Final_Consolidated_Grades.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             except Exception as e:
                 st.error(f"Error consolidating files: {e}")
+
+with tab4:
+    st.header("قسم الحضور (Attendance Calculation & AI Excel Sync)")
+    st.write("Upload a PDF or images containing handwritten check marks (✓ / X) on printed attendance sheets. Set the total check mark count to calculate scores **out of 2 points**.")
+
+    col_att1, col_att2 = st.columns(2)
+
+    with col_att1:
+        attendance_target = st.number_input(
+            "Select total check marks to calculate for full attendance (100%):",
+            min_value=1,
+            max_value=30,
+            value=7,
+            help="For example: If 7 lectures are selected, 7 check marks = 2/2 points."
+        )
+
+    with col_att2:
+        attendance_pdf = st.file_uploader(
+            "Upload Attendance PDF or Sheet Images",
+            type=["pdf", "png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key="att_files"
+        )
+
+    st.markdown("---")
+    st.subheader("📊 Output Target Excel File")
+    target_excel_attendance = st.file_uploader(
+        "Upload Reference Excel Sheet to insert Attendance Grades into (Bottom)",
+        type=["xlsx", "xls"],
+        key="att_excel_target"
+    )
+
+    if st.button("✨ Process Attendance & Sync to Excel"):
+        if not attendance_pdf:
+            st.error("Please upload attendance PDF/Image files.")
+        elif not target_excel_attendance:
+            st.error("Please upload the target reference Excel file.")
+        else:
+            try:
+                ref_df = pd.read_excel(target_excel_attendance)
+                name_col = None
+                for col in ref_df.columns:
+                    if "اسم" in str(col) or "Name" in str(col).capitalize():
+                        name_col = col
+                        break
+                if not name_col:
+                    name_col = ref_df.columns[1] if len(ref_df.columns) > 1 else ref_df.columns[0]
+
+                ref_df["Detected_Checkmarks"] = 0
+                ref_df["Attendance_Grade (/2)"] = 0.0
+
+                total_scanned = 0
+
+                for uploaded_file in attendance_pdf:
+                    if uploaded_file.name.endswith(".pdf"):
+                        reader = pypdf.PdfReader(uploaded_file)
+                        for page in reader.pages:
+                            for img_obj in page.images:
+                                img_bytes = img_obj.data
+                                np_img = np.frombuffer(img_bytes, np.uint8)
+                                img_cv = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+                                if img_cv is not None:
+                                    marks, score = process_attendance_image(img_cv, attendance_target)
+                                    total_scanned += 1
+                    else:
+                        file_bytes = uploaded_file.read()
+                        np_img = np.frombuffer(file_bytes, np.uint8)
+                        img_cv = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+                        if img_cv is not None:
+                            marks, score = process_attendance_image(img_cv, attendance_target)
+                            total_scanned += 1
+
+                # Apply grades to reference dataframe
+                for idx_row in range(len(ref_df)):
+                    # Assign based on target marks
+                    if "Detected_Checkmarks" in ref_df.columns:
+                        cnt = ref_df.at[idx_row, "Detected_Checkmarks"]
+                        if cnt == 0:
+                            ref_df.at[idx_row, "Attendance_Grade (/2)"] = 0.0
+                        else:
+                            calc_score = round(min(2.0, (cnt / attendance_target) * 2.0), 2)
+                            ref_df.at[idx_row, "Attendance_Grade (/2)"] = calc_score
+
+                st.success("Successfully processed attendance sheets and calculated scores out of 2!")
+                st.dataframe(ref_df)
+
+                att_output = io.BytesIO()
+                with pd.ExcelWriter(att_output, engine="openpyxl") as writer:
+                    ref_df.to_excel(writer, index=False, sheet_name="Attendance Grades")
+                att_output.seek(0)
+
+                st.download_button(
+                    label="📥 Download Excel File with Attendance Grades (/2)",
+                    data=att_output,
+                    file_name="Final_Attendance_Grades_Out_Of_2.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            except Exception as e:
+                st.error(f"Error processing attendance: {e}")
