@@ -10,12 +10,18 @@ import numpy as np
 import pandas as pd
 import qrcode
 import streamlit as st
-import pypdf
 from bidi.algorithm import get_display
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+# Safe import for pypdf
+try:
+    import pypdf
+    PYPDF_AVAILABLE = True
+except ImportError:
+    PYPDF_AVAILABLE = False
 
 # --- SETUP ARABIC FONT ---
 ARABIC_FONT_PATH = "Amiri-Regular.ttf"
@@ -39,10 +45,174 @@ FONT_NAME = load_arabic_font()
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
-    page_title="10 MCQ OMR & Attendance System", page_icon="📝", layout="wide"
+    page_title="OMR & Attendance Studio", page_icon="🍎", layout="wide"
 )
 
-st.title("📝 10-MCQ OMR Grader, AI Master Excel & الحضور (Attendance)")
+# --- APPLE-INSPIRED CSS DESIGN SYSTEM ---
+st.markdown("""
+<style>
+    /* Global Typography & Background */
+    @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Display:wght@300;400;500;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif !important;
+        -webkit-font-smoothing: antialiased;
+    }
+    
+    .main {
+        background: linear-gradient(180deg, #F5F5F7 0%, #FFFFFF 100%);
+    }
+
+    /* Apple-style Hero Header */
+    .apple-hero {
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.8);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+        border-radius: 24px;
+        padding: 32px 40px;
+        margin-bottom: 28px;
+        transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .apple-hero:hover {
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.07);
+        transform: translateY(-2px);
+    }
+
+    .apple-title {
+        font-size: 32px !important;
+        font-weight: 700 !important;
+        background: linear-gradient(135deg, #1D1D1F 0%, #434344 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        letter-spacing: -0.02em;
+        margin: 0;
+    }
+
+    .apple-subtitle {
+        font-size: 15px !important;
+        color: #86868B;
+        margin-top: 6px;
+        font-weight: 400;
+    }
+
+    /* Glass Cards */
+    .glass-card {
+        background: rgba(255, 255, 255, 0.75);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(0, 0, 0, 0.06);
+        border-radius: 20px;
+        padding: 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
+        transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+    }
+
+    .glass-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Custom Streamlit Tabs - Pill Style */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background-color: rgba(238, 238, 242, 0.7);
+        padding: 6px;
+        border-radius: 16px;
+        backdrop-filter: blur(12px);
+    }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        border-radius: 12px;
+        font-weight: 500;
+        font-size: 14px;
+        color: #6E6E73;
+        border: none !important;
+        padding: 0 18px;
+        transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .stTabs [aria-selected="true"] {
+        background-color: #FFFFFF !important;
+        color: #0071E3 !important;
+        box-shadow: 0 3px 12px rgba(0, 0, 0, 0.08) !important;
+        font-weight: 600;
+    }
+
+    /* Custom Buttons - Apple Blue */
+    div.stButton > button {
+        background: linear-gradient(180deg, #0077ED 0%, #0071E3 100%) !important;
+        color: white !important;
+        border-radius: 14px !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        letter-spacing: -0.01em !important;
+        box-shadow: 0 4px 14px rgba(0, 113, 227, 0.25) !important;
+        transition: all 0.25s ease !important;
+    }
+
+    div.stButton > button:hover {
+        transform: scale(1.02) translateY(-1px) !important;
+        box-shadow: 0 6px 20px rgba(0, 113, 227, 0.35) !important;
+        background: linear-gradient(180deg, #0071E3 0%, #0062C4 100%) !important;
+    }
+
+    /* Download Buttons */
+    div.stDownloadButton > button {
+        background: #34C759 !important;
+        color: white !important;
+        border-radius: 14px !important;
+        border: none !important;
+        padding: 10px 24px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 4px 14px rgba(52, 199, 89, 0.25) !important;
+        transition: all 0.25s ease !important;
+    }
+
+    div.stDownloadButton > button:hover {
+        transform: scale(1.02) translateY(-1px) !important;
+        box-shadow: 0 6px 20px rgba(52, 199, 89, 0.35) !important;
+    }
+
+    /* Inputs & File Uploaders */
+    div[data-baseweb="input"] {
+        border-radius: 12px !important;
+        border: 1px solid #E5E5EA !important;
+        background: #FFFFFF !important;
+    }
+
+    section[data-testid="stFileUploader"] {
+        border: 2px dashed #D1D1D6 !important;
+        border-radius: 18px !important;
+        background: rgba(255, 255, 255, 0.5) !important;
+        padding: 16px !important;
+        transition: all 0.3s ease !important;
+    }
+
+    section[data-testid="stFileUploader"]:hover {
+        border-color: #0071E3 !important;
+        background: rgba(0, 113, 227, 0.02) !important;
+    }
+
+    /* Hide Streamlit default branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
+
+# --- HEADER SECTION ---
+st.markdown("""
+<div class="apple-hero">
+    <div class="apple-title">OMR & Attendance Studio</div>
+    <div class="apple-subtitle">Precision 10-MCQ Bubble Grading, AI Master Excel Consolidator & Intelligent Attendance Tracking</div>
+</div>
+""", unsafe_allow_html=True)
 
 # --- ARABIC TEXT HELPER ---
 def format_arabic(text):
@@ -85,7 +255,7 @@ def parse_college_excel(file_bytes):
     return pd.DataFrame(students)
 
 
-# --- BUBBLE SHEET PDF GENERATOR (10 MCQ, OUT OF 10) ---
+# --- BUBBLE SHEET PDF GENERATOR ---
 def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="A", num_questions=10):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
@@ -111,7 +281,7 @@ def draw_single_sheet(student_id, student_name, group_name, exam_id, form_type="
     c.setFont(FONT_NAME, 14)
     c.drawRightString(page_width - 150, page_height - 45, formatted_name)
 
-    # QR Code (Encodes Student ID, Group, Exam, and Form)
+    # QR Code
     qr_payload = json.dumps({
         "group": str(group_name),
         "student_id": str(student_id),
@@ -185,7 +355,7 @@ def scan_bubbles_from_image(image_bytes, num_questions=10):
             bubble_contours.append(c)
 
     if not bubble_contours:
-        return None, qr_meta, "No bubbles detected. Please ensure clear lighting and straight photo."
+        return None, qr_meta, "No bubbles detected. Please ensure clear lighting."
 
     bubble_contours = sorted(bubble_contours, key=lambda c: cv2.boundingRect(c)[1])
     options = ["A", "B", "C", "D"]
@@ -256,24 +426,24 @@ def process_attendance_image(image_np, max_marks_target):
 
 # --- STREAMLIT UI ---
 tab1, tab2, tab3, tab4 = st.tabs([
-    "1️⃣ Generate 10-MCQ Form A & B Sheets", 
-    "2️⃣ Batch Grade & Auto-Detect Forms", 
-    "3️⃣ AI Master Excel Consolidator",
+    "1️⃣ Sheet Generator", 
+    "2️⃣ Auto Grader", 
+    "3️⃣ Master Consolidator",
     "4️⃣ الحضور (Attendance)"
 ])
 
 with tab1:
-    st.header("Step 1: Generate 10-MCQ Form A & Form B Bubble Sheets")
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("Generate 10-MCQ Form A & Form B Bubble Sheets")
     col1, col2 = st.columns(2)
 
     with col1:
         exam_id = st.text_input("Exam Code or Title", "DENT2025")
-        num_questions = 10
         st.info("📌 Sheet configuration: Fixed to 10 Questions (Grade out of 10).")
         form_mode = st.radio("Form Distribution Strategy", ["Alternate Form A and Form B per student", "All Form A", "All Form B"])
 
     with col2:
-        roster_file = st.file_uploader("Upload College Roster Excel File (.xlsx)", type=["xlsx", "xls"], key="roster_gen")
+        roster_file = st.file_uploader("Upload Roster Excel File (.xlsx)", type=["xlsx", "xls"], key="roster_gen")
 
     if roster_file and exam_id:
         try:
@@ -320,9 +490,11 @@ with tab1:
                     )
         except Exception as e:
             st.error(f"Error processing file: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with tab2:
-    st.header("Step 2: Upload Answer Keys & Batch Grade Mixed Papers")
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("Upload Answer Keys & Batch Grade Mixed Papers")
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -339,7 +511,7 @@ with tab2:
         if err_a:
             st.error(f"Form A Reference Key Error: {err_a}")
         else:
-            st.success("Form A Reference Answer Key (10 MCQ) loaded successfully!")
+            st.success("Form A Reference Answer Key loaded!")
 
     if key_img_b:
         key_b_bytes = key_img_b.read()
@@ -347,13 +519,13 @@ with tab2:
         if err_b:
             st.error(f"Form B Reference Key Error: {err_b}")
         else:
-            st.success("Form B Reference Answer Key (10 MCQ) loaded successfully!")
+            st.success("Form B Reference Answer Key loaded!")
 
     st.markdown("---")
     st.subheader("📁 Batch Upload Student Exam Photos & Grade Out of 10")
 
     roster_file_grade = st.file_uploader("Upload Roster Excel File to sync results into", type=["xlsx", "xls"], key="roster_grade")
-    mixed_student_imgs = st.file_uploader("Upload Mixed Student Exam Photos (Select Multiple)", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
+    mixed_student_imgs = st.file_uploader("Upload Mixed Student Exam Photos", type=["jpg", "png", "jpeg"], accept_multiple_files=True)
 
     if st.button("⚡ Process All Papers & Grade Out of 10"):
         if not roster_file_grade:
@@ -417,13 +589,15 @@ with tab2:
                 file_name="Exam_Grades_Out_Of_10.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with tab3:
-    st.header("Step 3: AI Master Excel Consolidator")
-    st.write("Upload a **Master Reference Excel File** along with multiple **Group Excel files**. The AI will automatically align student names and merge all grades cleanly.")
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("AI Master Excel Consolidator")
+    st.write("Upload a **Master Reference Excel File** along with multiple **Group Excel files**. The AI aligns names and merges grades automatically.")
 
-    master_excel_file = st.file_uploader("Upload Master Reference Excel Sheet (All Student Names)", type=["xlsx", "xls"], key="master_ref")
-    group_excel_files = st.file_uploader("Upload Graded Group Excel Files (Select Multiple)", type=["xlsx", "xls"], accept_multiple_files=True, key="group_excels")
+    master_excel_file = st.file_uploader("Upload Master Reference Excel Sheet", type=["xlsx", "xls"], key="master_ref")
+    group_excel_files = st.file_uploader("Upload Graded Group Excel Files", type=["xlsx", "xls"], accept_multiple_files=True, key="group_excels")
 
     if st.button("🤖 Auto-Consolidate & Align Grades with AI Match"):
         if not master_excel_file:
@@ -479,20 +653,22 @@ with tab3:
                 )
             except Exception as e:
                 st.error(f"Error consolidating files: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with tab4:
-    st.header("قسم الحضور (Attendance Calculation & AI Excel Sync)")
-    st.write("Upload a PDF or images containing handwritten check marks (✓ / X) on printed attendance sheets. Set the total check mark count to calculate scores **out of 2 points**.")
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("قسم الحضور (Attendance Calculation & AI Excel Sync)")
+    st.write("Upload printed attendance sheets containing handwritten check marks (✓ / X). Select total check marks target to compute scores **out of 2 points**.")
 
     col_att1, col_att2 = st.columns(2)
 
     with col_att1:
         attendance_target = st.number_input(
-            "Select total check marks to calculate for full attendance (100%):",
+            "Select total check marks for full attendance (100%):",
             min_value=1,
             max_value=30,
             value=7,
-            help="For example: If 7 lectures are selected, 7 check marks = 2/2 points."
+            help="For example: 7 check marks = 2/2 points."
         )
 
     with col_att2:
@@ -504,9 +680,9 @@ with tab4:
         )
 
     st.markdown("---")
-    st.subheader("📊 Output Target Excel File")
+    st.subheader("📊 Target Excel File")
     target_excel_attendance = st.file_uploader(
-        "Upload Reference Excel Sheet to insert Attendance Grades into (Bottom)",
+        "Upload Reference Excel Sheet to insert Attendance Grades into",
         type=["xlsx", "xls"],
         key="att_excel_target"
     )
@@ -534,16 +710,19 @@ with tab4:
 
                 for uploaded_file in attendance_pdf:
                     if uploaded_file.name.endswith(".pdf"):
-                        reader = pypdf.PdfReader(uploaded_file)
-                        for page in reader.pages:
-                            for img_obj in page.images:
-                                img_bytes = img_obj.data
-                                np_img = np.frombuffer(img_bytes, np.uint8)
-                                img_cv = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+                        if PYPDF_AVAILABLE:
+                            reader = pypdf.PdfReader(uploaded_file)
+                            for page in reader.pages:
+                                for img_obj in page.images:
+                                    img_bytes = img_obj.data
+                                    np_img = np.frombuffer(img_bytes, np.uint8)
+                                    img_cv = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
 
-                                if img_cv is not None:
-                                    marks, score = process_attendance_image(img_cv, attendance_target)
-                                    total_scanned += 1
+                                    if img_cv is not None:
+                                        marks, score = process_attendance_image(img_cv, attendance_target)
+                                        total_scanned += 1
+                        else:
+                            st.error("PDF processing requires `pypdf`. Add `pypdf` to `requirements.txt` or upload PNG/JPG images instead.")
                     else:
                         file_bytes = uploaded_file.read()
                         np_img = np.frombuffer(file_bytes, np.uint8)
@@ -553,16 +732,13 @@ with tab4:
                             marks, score = process_attendance_image(img_cv, attendance_target)
                             total_scanned += 1
 
-                # Apply grades to reference dataframe
                 for idx_row in range(len(ref_df)):
-                    # Assign based on target marks
-                    if "Detected_Checkmarks" in ref_df.columns:
-                        cnt = ref_df.at[idx_row, "Detected_Checkmarks"]
-                        if cnt == 0:
-                            ref_df.at[idx_row, "Attendance_Grade (/2)"] = 0.0
-                        else:
-                            calc_score = round(min(2.0, (cnt / attendance_target) * 2.0), 2)
-                            ref_df.at[idx_row, "Attendance_Grade (/2)"] = calc_score
+                    cnt = ref_df.at[idx_row, "Detected_Checkmarks"]
+                    if cnt == 0:
+                        ref_df.at[idx_row, "Attendance_Grade (/2)"] = 0.0
+                    else:
+                        calc_score = round(min(2.0, (cnt / attendance_target) * 2.0), 2)
+                        ref_df.at[idx_row, "Attendance_Grade (/2)"] = calc_score
 
                 st.success("Successfully processed attendance sheets and calculated scores out of 2!")
                 st.dataframe(ref_df)
@@ -580,3 +756,4 @@ with tab4:
                 )
             except Exception as e:
                 st.error(f"Error processing attendance: {e}")
+    st.markdown('</div>', unsafe_allow_html=True)
